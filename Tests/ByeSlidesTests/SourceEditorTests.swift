@@ -39,6 +39,14 @@ struct SourceEditorTests {
         #expect(document() == "你好")
     }
 
+    @Test func preservesTheExactUnicodeSpellingOfAnEdit() {
+        let (view, coordinator, document) = makeEditor(text: "é")
+        defer { withExtendedLifetime(coordinator) {} }
+        let decomposed = "e\u{0301}"
+        view.insertText(decomposed, replacementRange: NSRange(location: 0, length: 1))
+        #expect(Array(document().utf8) == Array(decomposed.utf8))
+    }
+
     @Test func turningOffListContinuationKeepsReturnAsAPlainNewline() {
         let (view, coordinator, document) = makeEditor(text: "- item")
         defer { withExtendedLifetime(coordinator) {} }

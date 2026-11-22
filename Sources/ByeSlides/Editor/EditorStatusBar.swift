@@ -19,7 +19,7 @@ struct EditorStatusBar: View {
         .monospacedDigit()
         .padding(8)
         .background(Color(nsColor: NSColor(hex: Palette.chrome)))
-        .task(id: text) {
+        .task(id: CountInput(text: text, range: nil)) {
             // Coalesce typing bursts. Moving the caret does not invalidate the document count.
             if total.wrappedValue != nil {
                 try? await Task.sleep(for: .milliseconds(120))
@@ -28,7 +28,7 @@ struct EditorStatusBar: View {
             let count = await WordCount.countInBackground(text)
             if !Task.isCancelled { total.wrappedValue = count }
         }
-        .task(id: selection.length > 0 ? Selection(text: text, range: selection) : nil) {
+        .task(id: selection.length > 0 ? CountInput(text: text, range: selection) : nil) {
             selected.wrappedValue = nil
             guard selection.length > 0 else { return }
             let count = await WordCount.countInBackground(text, in: selection)
@@ -42,8 +42,12 @@ struct EditorStatusBar: View {
         return "已选 \(selected.formatted()) 字，共 \(total.formatted()) 字"
     }
 
-    private struct Selection: Equatable {
+    private struct CountInput: Equatable {
         let text: String
-        let range: NSRange
+        let range: NSRange?
+
+        static func == (lhs: Self, rhs: Self) -> Bool {
+            lhs.range == rhs.range && (lhs.text as NSString).isEqual(to: rhs.text)
+        }
     }
 }

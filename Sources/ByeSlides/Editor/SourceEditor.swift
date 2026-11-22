@@ -63,7 +63,7 @@ struct SourceEditor: NSViewRepresentable {
             coordinator.restyle(view)
             if top > 0 { Coordinator.scroll(view, toShowOffsetAtTop: top) }
         }
-        if view.string != text { coordinator.replaceText(in: view, with: text) }
+        if !Coordinator.text(in: view, matches: text) { coordinator.replaceText(in: view, with: text) }
     }
 
     static func dismantleNSView(_ scroll: NSScrollView, coordinator: Coordinator) {

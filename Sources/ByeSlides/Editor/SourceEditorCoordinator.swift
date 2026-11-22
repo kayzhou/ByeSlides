@@ -25,6 +25,12 @@ extension SourceEditor {
 
         init(_ owner: SourceEditor) { self.owner = owner }
 
+        /// Markdown is source text. Compare UTF-16 code units without the normalization
+        /// Swift String equality performs for canonically equivalent spellings.
+        static func text(in view: NSTextView, matches source: String) -> Bool {
+            view.textStorage?.mutableString.isEqual(to: source) ?? false
+        }
+
         /// Shows text that changed outside the editor, e.g. after reverting the document.
         func replaceText(in view: NSTextView, with text: String) {
             isReplacingText = true
@@ -85,7 +91,7 @@ extension SourceEditor {
                 if delay > .zero { try? await Task.sleep(for: delay) }
                 guard !Task.isCancelled, let text = view?.string else { return }
                 let runs = await MarkdownHighlighter.runsInBackground(in: text)
-                guard !Task.isCancelled, let view, view.string == text else { return }
+                guard !Task.isCancelled, let view, Self.text(in: view, matches: text) else { return }
                 self?.finishRestyle(in: view, runs: runs)
             }
         }
@@ -119,7 +125,7 @@ extension SourceEditor {
         }
 
         private func commitEdit(in view: NSTextView) {
-            if owner.text != view.string { owner.text = view.string }
+            if !Self.text(in: view, matches: owner.text) { owner.text = view.string }
             restyleEdits(view)
             syncSelection(view)
         }
@@ -171,7 +177,7 @@ extension SourceEditor {
             guard let view = undoView, let manager = notification.object as? UndoManager, view.undoManager === manager else { return }
             defer { textBeforeUndo = nil }
             guard !isReplacingText, !view.hasMarkedText(), let textBeforeUndo,
-                  textBeforeUndo != view.string, owner.text != view.string else { return }
+                  !Self.text(in: view, matches: textBeforeUndo), !Self.text(in: view, matches: owner.text) else { return }
             // SwiftUI's document binding must not create a new undo entry during synchronization.
             manager.disableUndoRegistration()
             defer { manager.enableUndoRegistration() }
