@@ -39,7 +39,7 @@ package enum PreviewPage {
         <!doctype html><meta charset="UTF-8"><meta http-equiv="Content-Security-Policy" content="\(policy)">
         <style nonce="\(nonce)">
         \(stylesheet)
-        :root { \(style.cssDeclarations); --emphasis-light: \(Palette.emphasisLight); --emphasis-dark: \(Palette.emphasisDark) }
+        :root { \(style.cssDeclarations); --emphasis: \(Palette.emphasis) }
         </style>
         <body><main></main><script nonce="\(nonce)">
         const source = new TextDecoder().decode(Uint8Array.from(atob('\(source)'), c => c.charCodeAt(0)));

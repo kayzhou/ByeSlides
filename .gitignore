@@ -6,4 +6,5 @@ dist/
 .env
 .env.*
 Artwork/*
+!Artwork/AppIcon.png
 !Artwork/Bye-Manga.png

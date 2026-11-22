@@ -29,10 +29,7 @@ struct EditorStyle: Equatable {
         }
     }
 
-    static let emphasis = NSColor(name: "Emphasis") { appearance in
-        let dark = appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
-        return NSColor(hex: dark ? Palette.emphasisDark : Palette.emphasisLight)
-    }
+    static let emphasis = NSColor(hex: Palette.emphasis)
 
     /// Restyles whole lines of the text, or all of it. Styling only the lines around an edit keeps
     /// typing fast in long documents.

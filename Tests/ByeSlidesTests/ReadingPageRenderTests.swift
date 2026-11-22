@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import Testing
 import WebKit
@@ -13,7 +14,7 @@ final class LoadedReadingPage: NSObject, WKNavigationDelegate, WKScriptMessageHa
     private let resources = DocumentResourceHandler()
 
     init(_ markdown: String, style: ReadingStyle = .standard, options: PreviewOptions = PreviewOptions(),
-         height: CGFloat = 600, messageHandler: Bool = true) async {
+         height: CGFloat = 600, messageHandler: Bool = true, appearance: NSAppearance.Name = .aqua) async {
         let config = WKWebViewConfiguration()
         config.setURLSchemeHandler(resources, forURLScheme: DocumentResourceHandler.scheme)
         for script in PreviewPage.scripts {
@@ -22,6 +23,7 @@ final class LoadedReadingPage: NSObject, WKNavigationDelegate, WKScriptMessageHa
         }
         view = WKWebView(frame: CGRect(x: 0, y: 0, width: 800, height: height), configuration: config)
         super.init()
+        view.appearance = NSAppearance(named: appearance)
         if messageHandler { config.userContentController.add(self, name: PreviewPage.messageHandler) }
         view.navigationDelegate = self
         await withCheckedContinuation { continuation in
@@ -74,20 +76,24 @@ struct ReadingPageRenderTests {
     }
 
     // The font has one weight, so bold would be faked; colour marks it instead.
-    @Test func boldTextIsColouredNotHeavier() async throws {
-        let page = await LoadedReadingPage("正文 **重点** 文字\n\n#### 小标题")
+    @Test(arguments: [false, true])
+    func boldTextIsBlueInLightReadingPage(darkHost: Bool) async throws {
+        let page = await LoadedReadingPage("正文 **重点** 文字\n\n#### 小标题", appearance: darkHost ? .darkAqua : .aqua)
         let styles = try await page.run("""
             const s = getComputedStyle(document.querySelector('strong'));
             const h = getComputedStyle(document.querySelector('h4'));
             const p = getComputedStyle(document.querySelector('p'));
-            return [s.fontWeight, s.color, h.fontWeight, h.color, p.color, getComputedStyle(document.body).fontSynthesisWeight];
+            const scheme = getComputedStyle(document.documentElement).colorScheme;
+            return [s.fontWeight, s.color, h.fontWeight, h.color, p.color, getComputedStyle(document.body).fontSynthesisWeight, scheme];
             """) as? [Any]
+        let emphasis = "rgb(36, 88, 166)"
         #expect(styles?[0] as? String == "400")
-        #expect(styles?[1] as? String == "rgb(176, 58, 46)")  // Palette.emphasisLight
+        #expect(styles?[1] as? String == emphasis)
         #expect(styles?[2] as? String == "400")
-        #expect(styles?[3] as? String == "rgb(176, 58, 46)")
+        #expect(styles?[3] as? String == emphasis)
         #expect(styles?[4] as? String != styles?[1] as? String)
         #expect(styles?[5] as? String == "none")
+        #expect(styles?[6] as? String == "light")
     }
 
     @Test func holdsRemoteImagesUntilAsked() async throws {

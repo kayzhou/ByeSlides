@@ -1,11 +1,8 @@
-/* Reading-mode stylesheet. PreviewPage.swift sets --reading-size, --line-height and the --emphasis-* colours. */
+/* Reading-mode stylesheet. PreviewPage.swift sets --reading-size, --line-height and --emphasis. */
 
 @font-face { font-family: "LXGW WenKai"; src: url("document-resource://assets/LXGWWenKai-Regular.ttf") format("truetype"); font-weight: 400; font-display: swap }
 
-:root { color-scheme: light dark; --emphasis: var(--emphasis-light); --muted: #6e6e73; --quote-border: #96969b; --table-border: #b5b5ba }
-@media (prefers-color-scheme: dark) {
-    :root { --emphasis: var(--emphasis-dark); --muted: #98989d; --quote-border: #aaaab2; --table-border: #777780 }
-}
+:root { color-scheme: light; --muted: #6e6e73; --quote-border: #96969b; --table-border: #b5b5ba }
 
 body {
     font: 400 var(--reading-size)/var(--line-height) "LXGW WenKai", "霞鹜文楷", "Kaiti SC", system-ui;
@@ -51,7 +48,6 @@ th { background: #8882 }
 .blocked-image { display: inline-block; padding: .1em .5em; border: 1px dashed var(--table-border); border-radius: .3em; font-size: .9em; color: var(--muted) }
 
 @media print {
-    :root { color-scheme: light; --emphasis: var(--emphasis-light); --muted: #6e6e73; --quote-border: #96969b; --table-border: #b5b5ba }
     body { max-width: none; padding: 0; font-size: 12pt }
     a { color: inherit }
     pre { white-space: pre-wrap; overflow: visible }

@@ -37,6 +37,5 @@ package struct ReadingStyle: Equatable, Sendable {
 package enum Palette {
     /// Bold text is shown in this colour instead of a heavier weight. The reading font has a
     /// single weight, so WebKit would otherwise smear the glyphs to fake bold.
-    package static let emphasisLight = "#B03A2E"
-    package static let emphasisDark = "#F2917A"
+    package static let emphasis = "#2458A6"
 }

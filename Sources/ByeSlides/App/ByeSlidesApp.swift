@@ -1,8 +1,10 @@
+import AppKit
 import SwiftUI
 
 @main
 struct ByeSlidesApp: App {
     init() {
+        NSApplication.shared.appearance = NSAppearance(named: .aqua)
         PreferencesMigration.run()
     }
 
