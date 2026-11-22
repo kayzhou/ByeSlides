@@ -7,12 +7,6 @@ struct EditorStyle: Equatable {
     let fontSize: Int
     let lineSpacingTenths: Int
 
-    /// Widest the text column gets before the editor centres it, in multiples of the font size:
-    /// about 40 Chinese characters, close to the reading column.
-    static let columnWidthInEms: CGFloat = 40
-
-    var columnWidth: CGFloat { CGFloat(fontSize) * Self.columnWidthInEms }
-
     var font: NSFont { .monospacedSystemFont(ofSize: CGFloat(fontSize), weight: .regular) }
 
     var baseAttributes: [NSAttributedString.Key: Any] {

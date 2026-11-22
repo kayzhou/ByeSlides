@@ -75,6 +75,18 @@ struct ReadingPageRenderTests {
         #expect(result?[3] as? Bool == true)
     }
 
+    @Test func readingContentFollowsTheWindowWidth() async throws {
+        let page = await LoadedReadingPage("正文")
+        for width in [540.0, 1000.0, 1400.0] {
+            page.view.setFrameSize(CGSize(width: width, height: 600))
+            let layout = try await page.run("""
+                const bounds = document.querySelector('main').getBoundingClientRect();
+                return [bounds.left, bounds.width, document.documentElement.clientWidth - bounds.right];
+                """) as? [Double]
+            #expect(layout == [32, width - 64, 32])
+        }
+    }
+
     // The font has one weight, so bold would be faked; colour marks it instead.
     @Test(arguments: [false, true])
     func boldTextIsBlueInLightReadingPage(darkHost: Bool) async throws {

@@ -4,10 +4,15 @@ import Testing
 @testable import ByeSlides
 @testable import ByeSlidesCore
 
+private final class EditorTestWindow: NSWindow {
+    override var isKeyWindow: Bool { true }
+}
+
 @MainActor
 struct SourceEditorTests {
     /// A source editor's text view in a window, so it has an undo manager, wired to its coordinator.
-    private func makeEditor(text: String, folder: URL? = nil) -> (MarkdownTextView, SourceEditor.Coordinator, () -> String) {
+    private func makeEditor(text: String, folder: URL? = nil, in existingWindow: NSWindow? = nil)
+        -> (MarkdownTextView, SourceEditor.Coordinator, () -> String) {
         var stored = text
         var cursor = 0
         var selection = NSRange(location: 0, length: 0)
@@ -16,8 +21,8 @@ struct SourceEditorTests {
                                   cursorOffset: Binding(get: { cursor }, set: { cursor = $0 }),
                                   selection: Binding(get: { selection }, set: { selection = $0 }),
                                   style: style, documentFolder: folder, anchor: ScrollAnchor())
-        let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 300, height: 200),
-                              styleMask: [.titled], backing: .buffered, defer: false)
+        let window = existingWindow ?? NSWindow(contentRect: CGRect(x: 0, y: 0, width: 300, height: 200),
+                                               styleMask: [.titled], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
         let scroll = MarkdownTextView.scrollablePlainDocumentContentTextView()
         scroll.frame = window.contentView!.bounds
@@ -38,6 +43,43 @@ struct SourceEditorTests {
         let (view, _, document) = makeEditor(text: "")
         view.insertText("你好", replacementRange: view.selectedRange())
         #expect(document() == "你好")
+    }
+
+    @Test func writingCaretReappearsAfterTypingAndDefersToTheInputMethod() async throws {
+        // Keep the window offscreen and supply the caret geometry AppKit normally gives a key window.
+        let window = EditorTestWindow(contentRect: CGRect(x: 0, y: 0, width: 300, height: 200),
+                                      styleMask: [.titled], backing: .buffered, defer: false)
+        let (view, coordinator, document) = makeEditor(text: "", in: window)
+        defer { withExtendedLifetime((window, coordinator)) {} }
+        let indicator = NSTextInsertionIndicator(frame: CGRect(x: 32, y: 16, width: 0, height: 27))
+        view.addSubview(indicator)
+        let caret = try #require(view.subviews.first { type(of: $0) != NSTextInsertionIndicator.self && $0.bounds.width == 6 })
+        #expect(!caret.isHidden)
+        #expect(indicator.color == .clear)
+
+        view.insertText("a", replacementRange: view.selectedRange())
+        view.insertText("b", replacementRange: view.selectedRange())
+        #expect(caret.isHidden)
+        #expect(document() == "ab")
+        try await Task.sleep(for: .milliseconds(550))
+        #expect(!caret.isHidden)
+
+        view.setMarkedText("zhong", selectedRange: NSRange(location: 5, length: 0), replacementRange: view.selectedRange())
+        #expect(view.hasMarkedText())
+        #expect(caret.isHidden)
+        #expect(indicator.color == view.insertionPointColor)
+        #expect(document() == "ab")
+
+        view.insertText("中", replacementRange: view.markedRange())
+        #expect(!view.hasMarkedText())
+        #expect(indicator.color == .clear)
+        #expect(caret.isHidden)
+        #expect(document() == "ab中")
+        try await Task.sleep(for: .milliseconds(550))
+        #expect(!caret.isHidden)
+
+        view.setSelectedRange(NSRange(location: 0, length: 1))
+        #expect(caret.isHidden)
     }
 
     // Undoing typing after the text was replaced used to raise NSRangeException and crash.
@@ -150,15 +192,16 @@ struct SourceEditorTests {
             .fontDescriptor.symbolicTraits.contains(.bold) == true)
     }
 
-    @Test func centresTheTextColumnInWideWindows() throws {
+    @Test func keepsPageMarginsWhenTheEditorResizes() throws {
         let (view, _, _) = makeEditor(text: "")
         let scroll = try #require(view.enclosingScrollView)
-        view.columnWidth = 400
-        scroll.setFrameSize(NSSize(width: 1000, height: 300))
-        #expect(view.textContainerInset.width == ((view.bounds.width - 400) / 2).rounded())
-        #expect(view.textContainerInset.width > 250)
-        scroll.setFrameSize(NSSize(width: 380, height: 300))
-        #expect(view.textContainerInset.width == MarkdownTextView.minimumInset.width)
+        let container = try #require(view.textContainer)
+        for width in [540.0, 1000.0, 1400.0] {
+            scroll.setFrameSize(NSSize(width: width, height: 300))
+            #expect(view.bounds.width == scroll.contentSize.width)
+            #expect(view.textContainerOrigin.x + container.lineFragmentPadding == 32)
+            #expect(container.size.width - 2 * container.lineFragmentPadding == view.bounds.width - 64)
+        }
     }
 
     @Test func pastedImagesAreCopiedNextToTheDocument() throws {

@@ -23,7 +23,6 @@ struct SourceEditor: NSViewRepresentable {
         view.isIncrementalSearchingEnabled = true
         view.string = text
         view.documentFolder = documentFolder
-        view.columnWidth = style.columnWidth
         let coordinator = context.coordinator
         coordinator.style = style
         coordinator.restyle(view)
@@ -45,7 +44,6 @@ struct SourceEditor: NSViewRepresentable {
         view.documentFolder = documentFolder
         if coordinator.style != style {
             coordinator.style = style
-            view.columnWidth = style.columnWidth
             coordinator.restyle(view)
         }
         if view.string != text { coordinator.replaceText(in: view, with: text) }

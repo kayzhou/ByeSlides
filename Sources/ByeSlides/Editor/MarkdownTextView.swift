@@ -1,28 +1,139 @@
 import AppKit
+import Carbon.HIToolbox
 import UniformTypeIdentifiers
 
 /// The source editor's text view: list-aware Return and Tab, the Format menu actions,
-/// a centred text column, and pasted or dropped images.
+/// fixed page margins, and pasted or dropped images.
 final class MarkdownTextView: NSTextView {
     /// Folder of the saved document; nil while it is untitled.
     var documentFolder: URL?
 
-    /// Widest the text column gets; wider windows centre it.
-    var columnWidth: CGFloat = 640 {
-        didSet { updateColumnInset() }
+    private let writingCaret = WritingCaretView()
+    private var revealCaret: DispatchWorkItem?
+
+    override class func scrollablePlainDocumentContentTextView() -> NSScrollView {
+        let scroll = super.scrollablePlainDocumentContentTextView()
+        let editor = scroll.documentView as! MarkdownTextView
+        // The text container adds its own padding inside the inset.
+        let fragmentPadding = editor.textContainer?.lineFragmentPadding ?? 0
+        editor.textContainerInset = NSSize(width: 32 - fragmentPadding, height: 16)
+        return scroll
     }
 
-    static let minimumInset = NSSize(width: 20, height: 16)
+    // MARK: Writing caret
 
-    override func setFrameSize(_ newSize: NSSize) {
-        super.setFrameSize(newSize)
-        updateColumnInset()
+    override func didAddSubview(_ subview: NSView) {
+        super.didAddSubview(subview)
+        guard let indicator = subview as? NSTextInsertionIndicator else { return }
+        indicator.postsFrameChangedNotifications = true
+        NotificationCenter.default.addObserver(self, selector: #selector(refreshWritingCaret(_:)),
+                                               name: NSView.frameDidChangeNotification, object: indicator)
+        if writingCaret.superview == nil {
+            writingCaret.isHidden = true
+            addSubview(writingCaret, positioned: .above, relativeTo: indicator)
+        }
+        updateWritingCaret()
     }
 
-    private func updateColumnInset() {
-        let side = max(Self.minimumInset.width, ((bounds.width - columnWidth) / 2).rounded())
-        let inset = NSSize(width: side, height: Self.minimumInset.height)
-        if textContainerInset != inset { textContainerInset = inset }
+    override func willRemoveSubview(_ subview: NSView) {
+        if subview is NSTextInsertionIndicator {
+            NotificationCenter.default.removeObserver(self, name: NSView.frameDidChangeNotification, object: subview)
+            writingCaret.isHidden = true
+        }
+        super.willRemoveSubview(subview)
+    }
+
+    override func viewWillMove(toWindow newWindow: NSWindow?) {
+        let center = NotificationCenter.default
+        for name in [NSWindow.didBecomeKeyNotification, NSWindow.didResignKeyNotification] {
+            if let window { center.removeObserver(self, name: name, object: window) }
+            if let newWindow { center.addObserver(self, selector: #selector(refreshWritingCaret(_:)), name: name, object: newWindow) }
+        }
+        writingCaret.isHidden = true
+        super.viewWillMove(toWindow: newWindow)
+    }
+
+    override func becomeFirstResponder() -> Bool {
+        guard super.becomeFirstResponder() else { return false }
+        // The window assigns firstResponder after this method returns.
+        DispatchQueue.main.async { [weak self] in self?.updateWritingCaret() }
+        return true
+    }
+
+    override func resignFirstResponder() -> Bool {
+        guard super.resignFirstResponder() else { return false }
+        writingCaret.isHidden = true
+        return true
+    }
+
+    override func didChangeText() {
+        super.didChangeText()
+        revealCaret?.cancel()
+        let reveal = DispatchWorkItem { [weak self] in self?.showWritingCaret() }
+        revealCaret = reveal
+        updateWritingCaret()
+        DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(400), execute: reveal)
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        super.mouseDown(with: event)
+        showWritingCaret()
+    }
+
+    override func keyDown(with event: NSEvent) {
+        super.keyDown(with: event)
+        switch Int(event.keyCode) {
+        case kVK_LeftArrow, kVK_RightArrow, kVK_UpArrow, kVK_DownArrow:
+            showWritingCaret()
+        default:
+            break
+        }
+    }
+
+    override func setSelectedRanges(_ ranges: [NSValue], affinity: NSSelectionAffinity, stillSelecting: Bool) {
+        super.setSelectedRanges(ranges, affinity: affinity, stillSelecting: stillSelecting)
+        updateWritingCaret()
+    }
+
+    override func setMarkedText(_ string: Any, selectedRange: NSRange, replacementRange: NSRange) {
+        super.setMarkedText(string, selectedRange: selectedRange, replacementRange: replacementRange)
+        updateWritingCaret()
+    }
+
+    override func unmarkText() {
+        super.unmarkText()
+        updateWritingCaret()
+    }
+
+    private func showWritingCaret() {
+        revealCaret?.cancel()
+        revealCaret = nil
+        updateWritingCaret()
+    }
+
+    @objc private func refreshWritingCaret(_ notification: Notification) {
+        updateWritingCaret()
+    }
+
+    private func updateWritingCaret() {
+        let indicators = subviews.compactMap { $0 as? NSTextInsertionIndicator }
+        guard let indicator = indicators.last else { return }
+        let useOverlay = !hasMarkedText() && selectedRanges.count == 1
+        // TextKit 2 positions the caret and draws it for input methods and multiple selections.
+        let color: NSColor = useOverlay ? .clear : insertionPointColor
+        for indicator in indicators where indicator.color != color { indicator.color = color }
+
+        let caret = indicator.frame
+        guard useOverlay, revealCaret == nil, isEditable, window?.isKeyWindow == true,
+              window?.firstResponder === self, selectedRange().length == 0, caret.height > 0 else {
+            writingCaret.isHidden = true
+            return
+        }
+        let typingFont = typingAttributes[.font] as? NSFont ?? font
+        let glyphHeight = min(typingFont?.pointSize ?? caret.height, caret.height)
+        writingCaret.frame = NSRect(x: caret.midX - 3, y: caret.maxY - glyphHeight - 4,
+                                    width: 6, height: glyphHeight + 8)
+        writingCaret.isHidden = false
     }
 
     /// Makes an edit the way typing would: undoable, and reported to the delegate.
@@ -121,5 +232,21 @@ final class MarkdownTextView: NSTextView {
         alert.messageText = "请先存储这篇文稿"
         alert.informativeText = "图片会拷贝到文稿旁边的 \(ImageImporter.folderName) 文件夹，所以需要先把文稿存储下来。"
         if let window { alert.beginSheetModal(for: window) } else { alert.runModal() }
+    }
+}
+
+private final class WritingCaretView: NSView {
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+    override func draw(_ dirtyRect: NSRect) {
+        let needles = NSBezierPath()
+        for (edge, tip) in [(bounds.minY, bounds.minY + 3), (bounds.maxY, bounds.maxY - 3)] {
+            needles.move(to: NSPoint(x: bounds.minX, y: edge))
+            needles.line(to: NSPoint(x: bounds.midX, y: tip))
+            needles.line(to: NSPoint(x: bounds.maxX, y: edge))
+            needles.close()
+        }
+        EditorStyle.emphasis.setFill()
+        needles.fill()
     }
 }
