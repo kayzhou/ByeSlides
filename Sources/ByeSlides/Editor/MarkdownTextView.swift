@@ -13,16 +13,24 @@ final class MarkdownTextView: NSTextView {
         didSet {
             if preferences.margin != oldValue.margin { updateTextInset() }
             if preferences.highlightsLine != oldValue.highlightsLine { setNeedsDisplay(lineBackgroundRect(caretLine)) }
-            if window?.firstResponder === self,
-               preferences.typingTone != oldValue.typingTone || oldValue.typingVolume <= 0 {
-                prepareTypingSound()
+            if preferences.typingTone != oldValue.typingTone || (preferences.typingVolume > 0) != (oldValue.typingVolume > 0) {
+                updateTypingSound(hasFocus: window?.firstResponder === self)
             }
         }
     }
 
-    private func prepareTypingSound() {
-        guard preferences.typingVolume > 0, let tone = preferences.typingTone else { return }
-        Task.detached(priority: .utility) { await TypingSound.shared.prepare(tone) }
+    private let soundSession = UUID()
+    private var activeTypingTone: TypingTone?
+    private var soundFocusUpdate: Task<Void, Never>?
+
+    private func updateTypingSound(hasFocus: Bool) {
+        let tone = hasFocus && window?.isKeyWindow == true && preferences.typingVolume > 0 ? preferences.typingTone : nil
+        guard tone != activeTypingTone else { return }
+        activeTypingTone = tone
+        soundFocusUpdate?.cancel()
+        soundFocusUpdate = Task(priority: .utility) { [soundSession] in
+            await TypingSound.shared.setEditorTone(tone, for: soundSession)
+        }
     }
 
     private weak var currentIndicator: NSTextInsertionIndicator?
@@ -83,6 +91,7 @@ final class MarkdownTextView: NSTextView {
     }
 
     override func viewWillMove(toWindow newWindow: NSWindow?) {
+        updateTypingSound(hasFocus: false)
         let center = NotificationCenter.default
         for name in [NSWindow.didBecomeKeyNotification, NSWindow.didResignKeyNotification] {
             if let window { center.removeObserver(self, name: name, object: window) }
@@ -91,22 +100,31 @@ final class MarkdownTextView: NSTextView {
         super.viewWillMove(toWindow: newWindow)
     }
 
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        updateTypingSound(hasFocus: window?.firstResponder === self)
+    }
+
     @objc private func windowFocusChanged(_ notification: Notification) {
         setNeedsDisplay(lineBackgroundRect(caretLine))
+        updateTypingSound(hasFocus: window?.firstResponder === self)
     }
 
     override func becomeFirstResponder() -> Bool {
         let became = super.becomeFirstResponder()
         if became {
             setNeedsDisplay(lineBackgroundRect(caretLine))
-            prepareTypingSound()
+            updateTypingSound(hasFocus: true)
         }
         return became
     }
 
     override func resignFirstResponder() -> Bool {
         let resigned = super.resignFirstResponder()
-        if resigned { setNeedsDisplay(lineBackgroundRect(caretLine)) }
+        if resigned {
+            setNeedsDisplay(lineBackgroundRect(caretLine))
+            updateTypingSound(hasFocus: false)
+        }
         return resigned
     }
 

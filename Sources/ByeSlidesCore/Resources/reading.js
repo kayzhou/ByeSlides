@@ -250,7 +250,7 @@ window.addEventListener("scroll", () => {
     }, 50);
 }, {passive: true});
 
-// Same-page links scroll here. The app cancels every other link and opens it outside the page.
+// Same-page links scroll here. The app handles links to other documents and websites.
 document.addEventListener("click", event => {
     if (event.target.closest?.(".remote-notice button")) return postToApp({type: "loadRemoteImages"});
     const href = event.target.closest?.("a")?.getAttribute("href");

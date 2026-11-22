@@ -4,7 +4,7 @@ import WebKit
 
 /// Reading mode: renders the document's Markdown in a `WKWebView`.
 struct MarkdownPreview: NSViewRepresentable {
-    let markdown: String
+    let source: MarkdownSource
     /// Folder of the saved document, used to resolve relative images and links.
     let directory: URL?
     let style: ReadingStyle

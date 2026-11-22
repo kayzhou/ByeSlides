@@ -5,7 +5,7 @@ import WebKit
 
 /// What File > Print and Export as PDF need from the focused window.
 struct PrintableDocument {
-    let markdown: String
+    let source: MarkdownSource
     let directory: URL?
     let style: ReadingStyle
     let allowsRemoteImages: Bool
@@ -75,7 +75,7 @@ final class ReadingPrinter: NSObject, WKNavigationDelegate {
     }
 
     private func load() {
-        let html = PreviewPage.html(markdown: document.markdown, style: document.style,
+        let html = PreviewPage.html(markdown: document.source.text, style: document.style,
                                     options: PreviewOptions(allowsRemoteImages: document.allowsRemoteImages))
         webView.loadHTMLString(html, baseURL: PreviewPage.baseURL)
     }

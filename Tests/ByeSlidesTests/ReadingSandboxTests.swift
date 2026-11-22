@@ -13,7 +13,7 @@ private struct Fixture {
         let fm = FileManager.default
         try fm.createDirectory(at: notes.appendingPathComponent("img"), withIntermediateDirectories: true)
         try fm.createDirectory(at: notes.appendingPathComponent("sub.pdf"), withIntermediateDirectories: true)
-        for path in ["notes/img/a.png", "notes/paper.pdf", "notes/app.zip", "secret.png"] {
+        for path in ["notes/img/a.png", "notes/paper.pdf", "notes/app.zip", "notes/next.MD", "secret.png"] {
             try Data().write(to: base.appendingPathComponent(path))
         }
         try fm.createSymbolicLink(at: notes.appendingPathComponent("link.png"),
@@ -60,5 +60,14 @@ struct LinkPolicyTests {
         let fixture = try Fixture()
         let target = LinkPolicy.destination(for: URL(string: link)!, in: fixture.folder)
         #expect((target != nil) == opens)
+    }
+
+    @Test func opensRelativeMarkdownInByeSlides() throws {
+        let fixture = try Fixture()
+        let link = URL(string: "document-resource://document/note/next.MD")!
+        let target = try #require(LinkPolicy.destination(for: link, in: fixture.folder))
+        #expect(LinkPolicy.opensInEditor(target))
+        #expect(!LinkPolicy.opensInEditor(URL(string: "https://example.com/next.md")!))
+        #expect(!LinkPolicy.opensInEditor(fixture.notes.appendingPathComponent("paper.pdf")))
     }
 }

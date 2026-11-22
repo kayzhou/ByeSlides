@@ -8,10 +8,10 @@ import Testing
 struct SourceEditorTests {
     /// A source editor's text view in a window, so it has an undo manager, wired to its coordinator.
     private func makeEditor(text: String, folder: URL? = nil) -> (MarkdownTextView, SourceEditor.Coordinator, () -> String) {
-        var stored = text
+        var stored = MarkdownSource(text)
         var selection = NSRange(location: 0, length: 0)
         let style = EditorStyle(fontSize: 14, lineSpacingTenths: 15)
-        let editor = SourceEditor(text: Binding(get: { stored }, set: { stored = $0 }),
+        let editor = SourceEditor(source: Binding(get: { stored }, set: { stored = $0 }),
                                   selection: Binding(get: { selection }, set: { selection = $0 }),
                                   style: style, documentFolder: folder, anchor: ScrollAnchor())
         let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 300, height: 200),
@@ -30,7 +30,7 @@ struct SourceEditorTests {
         coordinator.style = style
         view.delegate = coordinator
         coordinator.observeUndo(in: view)
-        return (view, coordinator, { stored })
+        return (view, coordinator, { stored.text })
     }
 
     @Test func typingUpdatesTheDocument() {

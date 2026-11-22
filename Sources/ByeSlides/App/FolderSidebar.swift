@@ -99,7 +99,8 @@ struct FolderEntry: Identifiable, Sendable {
                 if values.isDirectory == true, values.isPackage != true {
                     return FolderEntry(url: url, isFolder: true)
                 }
-                guard values.isRegularFile == true, ["md", "markdown", "txt"].contains(url.pathExtension.lowercased())
+                let ext = url.pathExtension.lowercased()
+                guard values.isRegularFile == true, ext == "txt" || MarkdownDocument.markdownExtensions.contains(ext)
                 else { return nil }
                 return FolderEntry(url: url, isFolder: false)
             }

@@ -79,7 +79,7 @@ struct DocumentView: View {
                 folderBrowser.chooseFolder(startingAt: directory)
             })
             .focusedSceneValue(\.printableDocument, PrintableDocument(
-                markdown: document.text, directory: directory, style: readingStyle(zoom: .standard),
+                source: document.source, directory: directory, style: readingStyle(zoom: .standard),
                 allowsRemoteImages: allowsRemoteImages, title: title))
     }
 
@@ -100,7 +100,7 @@ struct DocumentView: View {
                         ReadingFindBar(finder: finder)
                         Divider()
                     }
-                    MarkdownPreview(markdown: document.text, directory: directory, style: readingStyle(zoom: zoom),
+                    MarkdownPreview(source: document.source, directory: directory, style: readingStyle(zoom: zoom),
                                     allowsRemoteImages: allowsRemoteImages, offersRemoteImages: remoteImages == .ask,
                                     anchor: anchor.wrappedValue, finder: finder,
                                     loadRemoteImages: { approvedRemoteImages.wrappedValue = true })
@@ -111,16 +111,16 @@ struct DocumentView: View {
 
     private var editor: some View {
         VStack(spacing: 0) {
-            SourceEditor(text: $document.text, selection: selection.projectedValue,
+            SourceEditor(source: $document.source, selection: selection.projectedValue,
                          style: EditorStyle(fontSize: zoom.fontSize(editorFontSize), lineSpacingTenths: editorLineSpacing),
                          documentFolder: directory, anchor: anchor.wrappedValue, isActive: mode == .editing,
                          preferences: SourceEditorPreferences(margin: pageMargin, highlightsLine: highlightLine,
                                                               continuesLists: continueLists,
-                                                              typingTone: typingSound ? typingTone : nil,
+                                                              typingTone: typingSound && mode == .editing ? typingTone : nil,
                                                               typingVolume: typingVolume))
             if showWordCount {
                 Rectangle().fill(Color(nsColor: NSColor(hex: Palette.border))).frame(height: 1)
-                EditorStatusBar(text: document.text, selection: selection.wrappedValue)
+                EditorStatusBar(source: document.source, selection: selection.wrappedValue)
             }
         }
     }

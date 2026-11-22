@@ -77,8 +77,22 @@ actor TypingSound {
     private var nextVariant = 0
     private var previewTask: Task<Void, Never>?
     private var idleTask: Task<Void, Never>?
+    private var focusedEditors: Set<UUID> = []
     private var lastUse = -Double.infinity
     private var lastKeystroke = -Double.infinity
+
+    /// Keep the audio device ready for the next key while a writing view has focus.
+    func setEditorTone(_ tone: TypingTone?, for editor: UUID) {
+        guard !Task.isCancelled else { return }
+        if let tone {
+            focusedEditors.insert(editor)
+            idleTask?.cancel()
+            idleTask = nil
+            prepare(tone)
+        } else if focusedEditors.remove(editor) != nil, focusedEditors.isEmpty, engine?.isRunning == true {
+            keepEngineWarm()
+        }
+    }
 
     func prepare(_ tone: TypingTone) {
         if buffers[tone] == nil {
@@ -172,6 +186,7 @@ actor TypingSound {
     }
 
     private func keepEngineWarm() {
+        guard focusedEditors.isEmpty else { return }
         lastUse = ProcessInfo.processInfo.systemUptime
         guard idleTask == nil else { return }
         idleTask = Task { [weak self] in await self?.stopWhenIdle() }
@@ -184,6 +199,7 @@ actor TypingSound {
             if remaining <= 0 { break }
             try? await Task.sleep(for: .seconds(remaining))
         }
+        guard !Task.isCancelled else { return }
         for voice in voices { voice.stop() }
         engine?.stop()
         idleTask = nil

@@ -13,7 +13,7 @@ struct HelpCommands: Commands {
 
 struct HelpView: View {
     static let windowID = "help"
-    private static let guide = BundledResource.string("Help", "md")
+    private static let guide = BundledResource.string("Help", "md").map(MarkdownSource.init)
 
     @StateObject private var finder = ReadingFinder()
     private let anchor = State(initialValue: ScrollAnchor())
@@ -25,7 +25,7 @@ struct HelpView: View {
                     ReadingFindBar(finder: finder)
                     Divider()
                 }
-                MarkdownPreview(markdown: guide, directory: nil, style: .standard,
+                MarkdownPreview(source: guide, directory: nil, style: .standard,
                                 allowsRemoteImages: false, offersRemoteImages: false,
                                 anchor: anchor.wrappedValue, finder: finder, loadRemoteImages: {})
             } else {

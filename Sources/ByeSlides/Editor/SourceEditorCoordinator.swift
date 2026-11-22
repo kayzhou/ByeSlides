@@ -125,7 +125,7 @@ extension SourceEditor {
         }
 
         private func commitEdit(in view: NSTextView) {
-            if !Self.text(in: view, matches: owner.text) { owner.text = view.string }
+            if !Self.text(in: view, matches: owner.source.text) { owner.source = MarkdownSource(view.string) }
             restyleEdits(view)
             syncSelection(view)
         }
@@ -177,7 +177,7 @@ extension SourceEditor {
             guard let view = undoView, let manager = notification.object as? UndoManager, view.undoManager === manager else { return }
             defer { textBeforeUndo = nil }
             guard !isReplacingText, !view.hasMarkedText(), let textBeforeUndo,
-                  !Self.text(in: view, matches: textBeforeUndo), !Self.text(in: view, matches: owner.text) else { return }
+                  !Self.text(in: view, matches: textBeforeUndo), !Self.text(in: view, matches: owner.source.text) else { return }
             // SwiftUI's document binding must not create a new undo entry during synchronization.
             manager.disableUndoRegistration()
             defer { manager.enableUndoRegistration() }

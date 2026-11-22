@@ -12,7 +12,7 @@ struct SourceEditorPreferences: Equatable {
 
 /// Plain-text Markdown source editor backed by `MarkdownTextView`.
 struct SourceEditor: NSViewRepresentable {
-    @Binding var text: String
+    @Binding var source: MarkdownSource
     @Binding var selection: NSRange
     let style: EditorStyle
     let documentFolder: URL?
@@ -30,7 +30,7 @@ struct SourceEditor: NSViewRepresentable {
         view.isAutomaticQuoteSubstitutionEnabled = false
         view.isAutomaticDashSubstitutionEnabled = false
         view.isIncrementalSearchingEnabled = true
-        view.string = text
+        view.string = source.text
         view.setSelectedRange(NSRange(location: 0, length: 0))
         view.documentFolder = documentFolder
         view.preferences = preferences
@@ -63,7 +63,7 @@ struct SourceEditor: NSViewRepresentable {
             coordinator.restyle(view)
             if top > 0 { Coordinator.scroll(view, toShowOffsetAtTop: top) }
         }
-        if !Coordinator.text(in: view, matches: text) { coordinator.replaceText(in: view, with: text) }
+        if !Coordinator.text(in: view, matches: source.text) { coordinator.replaceText(in: view, with: source.text) }
     }
 
     static func dismantleNSView(_ scroll: NSScrollView, coordinator: Coordinator) {

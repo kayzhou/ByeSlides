@@ -6,7 +6,7 @@ extension MarkdownPreview {
     final class Coordinator: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
         var owner: MarkdownPreview
         let resources = DocumentResourceHandler()
-        private var rendered: (markdown: String, directory: URL?, allowsRemoteImages: Bool, offersRemoteImages: Bool)?
+        private var rendered: (source: MarkdownSource, directory: URL?, allowsRemoteImages: Bool, offersRemoteImages: Bool)?
         private var style: ReadingStyle?
 
         init(_ owner: MarkdownPreview) { self.owner = owner }
@@ -15,18 +15,18 @@ extension MarkdownPreview {
         func update(_ view: WKWebView) {
             let previousStyle = style
             style = owner.style
-            if let rendered, rendered.markdown == owner.markdown, rendered.directory == owner.directory,
+            if let rendered, rendered.source == owner.source, rendered.directory == owner.directory,
                rendered.allowsRemoteImages == owner.allowsRemoteImages,
                rendered.offersRemoteImages == owner.offersRemoteImages {
                 if previousStyle != owner.style { applyStyle(to: view, keepingPosition: true) }
                 return
             }
-            rendered = (owner.markdown, owner.directory, owner.allowsRemoteImages, owner.offersRemoteImages)
+            rendered = (owner.source, owner.directory, owner.allowsRemoteImages, owner.offersRemoteImages)
             resources.folder = owner.directory.map(DocumentFolder.init)
             let options = PreviewOptions(allowsRemoteImages: owner.allowsRemoteImages,
                                          offersRemoteImages: owner.offersRemoteImages,
-                                         sourceLine: owner.anchor.line(in: owner.markdown))
-            view.loadHTMLString(PreviewPage.html(markdown: owner.markdown, style: owner.style, options: options),
+                                         sourceLine: owner.anchor.line(in: owner.source.text))
+            view.loadHTMLString(PreviewPage.html(markdown: owner.source.text, style: owner.style, options: options),
                                 baseURL: PreviewPage.baseURL)
         }
 
@@ -49,7 +49,11 @@ extension MarkdownPreview {
             }
             decisionHandler(.cancel)
             if let url = action.request.url, let target = LinkPolicy.destination(for: url, in: resources.folder) {
-                NSWorkspace.shared.open(target)
+                if LinkPolicy.opensInEditor(target) {
+                    DocumentSwitcher.shared.open(target)
+                } else {
+                    NSWorkspace.shared.open(target)
+                }
             }
         }
 
