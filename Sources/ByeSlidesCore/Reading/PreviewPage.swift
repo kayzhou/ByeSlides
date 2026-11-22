@@ -4,18 +4,21 @@ import Foundation
 package struct PreviewOptions: Equatable, Sendable {
     /// Remote images make the page contact other servers, so they load only on request.
     package var allowsRemoteImages: Bool
+    /// Whether to show the button that grants permission for this document window.
+    package var offersRemoteImages: Bool
     /// Zero-based source line to bring to the top once the page has rendered.
     package var sourceLine: Int
 
-    package init(allowsRemoteImages: Bool = false, sourceLine: Int = 0) {
+    package init(allowsRemoteImages: Bool = false, offersRemoteImages: Bool = false, sourceLine: Int = 0) {
         self.allowsRemoteImages = allowsRemoteImages
+        self.offersRemoteImages = offersRemoteImages
         self.sourceLine = sourceLine
     }
 }
 
 /// Builds the self-contained HTML page used by reading mode, printing and Quick Look.
 package enum PreviewPage {
-    package static let baseURL = URL(string: "\(DocumentResourceHandler.scheme)://\(DocumentResourceHandler.documentHost)/")!
+    package static let baseURL = URL(string: "\(DocumentResourceHandler.scheme)://\(DocumentResourceHandler.documentHost)\(DocumentResourceHandler.documentPathPrefix)")!
 
     /// Name of the `WKScriptMessageHandler` the page reports scrolling and button clicks to.
     package static let messageHandler = "reading"
@@ -39,11 +42,11 @@ package enum PreviewPage {
         <!doctype html><meta charset="UTF-8"><meta http-equiv="Content-Security-Policy" content="\(policy)">
         <style nonce="\(nonce)">
         \(stylesheet)
-        :root { \(style.cssDeclarations); --emphasis: \(Palette.emphasis) }
+        :root { \(style.cssDeclarations); \(Palette.cssDeclarations) }
         </style>
         <body><main></main><script nonce="\(nonce)">
         const source = new TextDecoder().decode(Uint8Array.from(atob('\(source)'), c => c.charCodeAt(0)));
-        displayMarkdown(source, {remoteImages: \(options.allowsRemoteImages), line: \(options.sourceLine)});
+        displayMarkdown(source, {remoteImages: \(options.allowsRemoteImages), offerRemoteImages: \(options.offersRemoteImages), line: \(options.sourceLine)});
         </script></body>
         """
     }

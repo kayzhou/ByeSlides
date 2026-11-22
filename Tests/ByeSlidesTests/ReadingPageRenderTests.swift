@@ -57,6 +57,26 @@ final class LoadedReadingPage: NSObject, WKNavigationDelegate, WKScriptMessageHa
 
 @MainActor
 struct ReadingPageRenderTests {
+    @Test func bundledHelpRendersItsContentsAndExamples() async throws {
+        let markdown = try #require(BundledResource.string("Help", "md"))
+        let page = await LoadedReadingPage(markdown)
+        let result = try await page.run("""
+            const main = document.querySelector('main');
+            const contents = [...main.querySelectorAll('a[href^="#"]')];
+            const missing = contents.filter(link => !document.getElementById(decodeURIComponent(link.hash.slice(1))));
+            return [
+                main.querySelector('h1').textContent,
+                contents.length >= 12 && missing.length === 0,
+                main.querySelectorAll('pre code').length >= 10,
+                main.querySelector('td[align="right"]') !== null,
+                main.querySelector('input[type="checkbox"]:checked:disabled') !== null,
+                main.querySelector('img') === null
+            ];
+            """) as? [Any]
+        #expect(result?.first as? String == "ByeSlides 帮助")
+        #expect(result?.dropFirst().compactMap { $0 as? Bool } == [true, true, true, true, true])
+    }
+
     @Test func rendersMarkdownWithStyleAndFont() async throws {
         let page = await LoadedReadingPage("# 标题\n\n| a |\n|---|\n| b |\n\n- [x] 完成",
                                            style: ReadingStyle(fontSize: 20, lineSpacingTenths: 15))
@@ -87,6 +107,23 @@ struct ReadingPageRenderTests {
         }
     }
 
+    @Test func changingFontSizeKeepsTheReadingPositionWithinALongParagraph() async throws {
+        let paragraph = String(repeating: "这是一段用于检查字号缩放后阅读位置的正文。", count: 170)
+        let page = await LoadedReadingPage("## 标题\n\n\(paragraph)\n\n\(paragraph)")
+        let larger = ReadingStyle(fontSize: 27, lineSpacingTenths: 15)
+        let result = try await page.run("""
+            await document.fonts.ready;
+            const paragraph = document.querySelector('p');
+            const before = paragraph.getBoundingClientRect();
+            window.scrollTo(0, before.top + window.scrollY + before.height * 0.4);
+            withReadingPosition(() => { \(larger.updateScript) });
+            const after = paragraph.getBoundingClientRect();
+            return [-after.top / after.height, parseInt(getComputedStyle(paragraph).fontSize)];
+            """) as? [Double]
+        #expect(abs((result?.first ?? 0) - 0.4) < 0.005)
+        #expect(result?.last == 27)
+    }
+
     // The font has one weight, so bold would be faked; colour marks it instead.
     @Test(arguments: [false, true])
     func boldTextIsBlueInLightReadingPage(darkHost: Bool) async throws {
@@ -108,9 +145,21 @@ struct ReadingPageRenderTests {
         #expect(styles?[6] as? String == "light")
     }
 
+    @Test func rendersTheCobaltAndSnowWhitePalette() async throws {
+        let page = await LoadedReadingPage("[链接](https://example.com) `code`\n\n> 引用\n\n| 标题 |\n|---|\n| 内容 |")
+        let colors = try await page.run("""
+            const style = selector => getComputedStyle(document.querySelector(selector));
+            return [style('html').backgroundColor, style('body').color, style('a').color,
+                    style('code').backgroundColor, style('blockquote').backgroundColor,
+                    style('th').backgroundColor, style('th').borderTopColor];
+            """) as? [String]
+        #expect(colors == ["rgb(255, 255, 255)", "rgb(28, 38, 51)", "rgb(36, 88, 166)",
+                           "rgb(241, 245, 251)", "rgb(241, 245, 251)", "rgb(241, 245, 251)", "rgb(221, 228, 239)"])
+    }
+
     @Test func holdsRemoteImagesUntilAsked() async throws {
         let markdown = "![猫](https://example.com/cat.png)\n\n![](http://example.com/a.png)\n\n![本地](data:image/png;base64,iVBORw0KGgo=)"
-        let blocked = await LoadedReadingPage(markdown)
+        let blocked = await LoadedReadingPage(markdown, options: PreviewOptions(offersRemoteImages: true))
         let html = try await blocked.mainHTML
         #expect(!html.contains("<img src=\"https"))
         #expect(html.contains(#"<span class="blocked-image" title="https://example.com/cat.png">猫</span>"#))
@@ -127,6 +176,27 @@ struct ReadingPageRenderTests {
         #expect(!allowedHTML.contains("remote-notice"))
     }
 
+    @Test func permanentlyBlockedImagesHaveNoLoadButtonEvenInTheApp() async throws {
+        let page = await LoadedReadingPage("![](https://example.com/a.png)")
+        let html = try await page.mainHTML
+        #expect(html.contains("未载入 1 张远程图片"))
+        #expect(!html.contains("<button"))
+        #expect(!html.contains("<img"))
+    }
+
+    @Test func readingPreferencesChangeTheRenderedPage() async throws {
+        let page = await LoadedReadingPage("你好 world。")
+        let style = ReadingStyle(fontSize: 18, lineSpacingTenths: 15, pageMargin: 48, justifiesText: false,
+                                 spacesMixedScripts: false, hangsPunctuation: false)
+        let settings = try await page.run("""
+            \(style.updateScript)
+            const body = getComputedStyle(document.body);
+            const paragraph = getComputedStyle(document.querySelector('main > p'));
+            return [body.paddingLeft, paragraph.textAlign, body.textAutospace, body.hangingPunctuation];
+            """) as? [String]
+        #expect(settings == ["48px", "start", "no-autospace", "none"])
+    }
+
     @Test func quickLookShowsNoLoadButton() async throws {
         let page = await LoadedReadingPage("![](https://example.com/a.png)", messageHandler: false)
         let html = try await page.mainHTML
@@ -134,16 +204,35 @@ struct ReadingPageRenderTests {
         #expect(!html.contains("<button"))
     }
 
+    @Test func relativeResourcesStayInsideTheDocumentFolder() async throws {
+        let page = await LoadedReadingPage("""
+            ![local](assets/image.png)
+            ![parent](../assets/image.png)
+            ![same-name](../note/assets/image.png)
+            ![root](/assets/image.png)
+            [sibling](drafts/../other.md)
+            """)
+        let references = try await page.run("""
+            return [...document.querySelector('main').querySelectorAll('img, a')].map(element =>
+                (element.hasAttribute('src') ? element.src : element.hasAttribute('href') ? element.href : 'blocked'));
+            """) as? [String]
+        let base = PreviewPage.baseURL.absoluteString
+        #expect(references == [base + "assets/image.png", "blocked", "blocked", base + "assets/image.png", base + "other.md"])
+    }
+
     @Test func scrollsToAndReportsSourceLines() async throws {
         let markdown = (0..<80).map { "第 \($0) 段，" + String(repeating: "内容", count: 30) }.joined(separator: "\n\n")
         let page = await LoadedReadingPage(markdown, options: PreviewOptions(sourceLine: 100), height: 300)
         let top = try await page.run("await document.fonts.ready; return topSourceLine()") as? Int
         #expect(top == 100, "Paragraph 50 starts on line 100 and should be at the top.")
+        try await page.settle()
+        #expect(page.messages.last?["restored"] as? Bool == true)
 
         _ = try await page.run("window.scrollTo(0, 0)")
         try await page.settle()
         #expect(page.messages.last?["type"] as? String == "scroll")
         #expect(page.messages.last?["line"] as? Int == 0)
+        #expect(page.messages.last?["restored"] as? Bool == false)
 
         _ = try await page.run("scrollToSourceLine(40)")
         try await page.settle()

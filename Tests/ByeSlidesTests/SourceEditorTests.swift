@@ -4,25 +4,18 @@ import Testing
 @testable import ByeSlides
 @testable import ByeSlidesCore
 
-private final class EditorTestWindow: NSWindow {
-    override var isKeyWindow: Bool { true }
-}
-
 @MainActor
 struct SourceEditorTests {
     /// A source editor's text view in a window, so it has an undo manager, wired to its coordinator.
-    private func makeEditor(text: String, folder: URL? = nil, in existingWindow: NSWindow? = nil)
-        -> (MarkdownTextView, SourceEditor.Coordinator, () -> String) {
+    private func makeEditor(text: String, folder: URL? = nil) -> (MarkdownTextView, SourceEditor.Coordinator, () -> String) {
         var stored = text
-        var cursor = 0
         var selection = NSRange(location: 0, length: 0)
         let style = EditorStyle(fontSize: 14, lineSpacingTenths: 15)
         let editor = SourceEditor(text: Binding(get: { stored }, set: { stored = $0 }),
-                                  cursorOffset: Binding(get: { cursor }, set: { cursor = $0 }),
                                   selection: Binding(get: { selection }, set: { selection = $0 }),
                                   style: style, documentFolder: folder, anchor: ScrollAnchor())
-        let window = existingWindow ?? NSWindow(contentRect: CGRect(x: 0, y: 0, width: 300, height: 200),
-                                               styleMask: [.titled], backing: .buffered, defer: false)
+        let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 300, height: 200),
+                              styleMask: [.titled], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
         let scroll = MarkdownTextView.scrollablePlainDocumentContentTextView()
         scroll.frame = window.contentView!.bounds
@@ -36,6 +29,7 @@ struct SourceEditorTests {
         let coordinator = editor.makeCoordinator()
         coordinator.style = style
         view.delegate = coordinator
+        coordinator.observeUndo(in: view)
         return (view, coordinator, { stored })
     }
 
@@ -45,41 +39,26 @@ struct SourceEditorTests {
         #expect(document() == "你好")
     }
 
-    @Test func writingCaretReappearsAfterTypingAndDefersToTheInputMethod() async throws {
-        // Keep the window offscreen and supply the caret geometry AppKit normally gives a key window.
-        let window = EditorTestWindow(contentRect: CGRect(x: 0, y: 0, width: 300, height: 200),
-                                      styleMask: [.titled], backing: .buffered, defer: false)
-        let (view, coordinator, document) = makeEditor(text: "", in: window)
-        defer { withExtendedLifetime((window, coordinator)) {} }
-        let indicator = NSTextInsertionIndicator(frame: CGRect(x: 32, y: 16, width: 0, height: 27))
-        view.addSubview(indicator)
-        let caret = try #require(view.subviews.first { type(of: $0) != NSTextInsertionIndicator.self && $0.bounds.width == 6 })
-        #expect(!caret.isHidden)
-        #expect(indicator.color == .clear)
+    @Test func turningOffListContinuationKeepsReturnAsAPlainNewline() {
+        let (view, coordinator, document) = makeEditor(text: "- item")
+        defer { withExtendedLifetime(coordinator) {} }
+        view.preferences.continuesLists = false
+        view.setSelectedRange(NSRange(location: 6, length: 0))
+        view.insertNewline(nil)
+        #expect(document() == "- item\n")
+    }
 
-        view.insertText("a", replacementRange: view.selectedRange())
-        view.insertText("b", replacementRange: view.selectedRange())
-        #expect(caret.isHidden)
-        #expect(document() == "ab")
-        try await Task.sleep(for: .milliseconds(550))
-        #expect(!caret.isHidden)
-
+    @Test func committingMarkedTextUpdatesTheDocument() {
+        let (view, coordinator, document) = makeEditor(text: "ab")
+        defer { withExtendedLifetime(coordinator) {} }
+        view.setSelectedRange(NSRange(location: 2, length: 0))
         view.setMarkedText("zhong", selectedRange: NSRange(location: 5, length: 0), replacementRange: view.selectedRange())
         #expect(view.hasMarkedText())
-        #expect(caret.isHidden)
-        #expect(indicator.color == view.insertionPointColor)
         #expect(document() == "ab")
 
         view.insertText("中", replacementRange: view.markedRange())
         #expect(!view.hasMarkedText())
-        #expect(indicator.color == .clear)
-        #expect(caret.isHidden)
         #expect(document() == "ab中")
-        try await Task.sleep(for: .milliseconds(550))
-        #expect(!caret.isHidden)
-
-        view.setSelectedRange(NSRange(location: 0, length: 1))
-        #expect(caret.isHidden)
     }
 
     // Undoing typing after the text was replaced used to raise NSRangeException and crash.
@@ -124,6 +103,27 @@ struct SourceEditorTests {
         #expect(view.string == "- [x] 买菜\n- [ ] ")
     }
 
+    @Test func returnRenumbersTheListAndUndoesInOneStep() throws {
+        let original = "1. 第一项\n2. 第二项\n3. 第三项"
+        let (view, coordinator, document) = makeEditor(text: original)
+        defer { withExtendedLifetime(coordinator) {} }
+        let undoManager = try #require(view.undoManager)
+        undoManager.groupsByEvent = false
+        view.setSelectedRange(NSRange(location: "1. 第一项".utf16.count, length: 0))
+
+        undoManager.beginUndoGrouping()
+        view.insertNewline(nil)
+        undoManager.endUndoGrouping()
+
+        #expect(document() == "1. 第一项\n2. \n3. 第二项\n4. 第三项")
+        #expect(view.selectedRange() == NSRange(location: "1. 第一项\n2. ".utf16.count, length: 0))
+        undoManager.undo()
+        #expect(view.string == original)
+        #expect(document() == original)
+        undoManager.redo()
+        #expect(document() == "1. 第一项\n2. \n3. 第二项\n4. 第三项")
+    }
+
     @Test func formatMenuWrapsTheSelection() {
         let (view, _, document) = makeEditor(text: "重点内容")
         view.setSelectedRange(NSRange(location: 0, length: 2))
@@ -140,10 +140,10 @@ struct SourceEditorTests {
         view.insertText("# 标题\n正文 **重点**", replacementRange: view.selectedRange())
         let storage = try #require(view.textStorage)
         let heading = try #require(storage.attribute(.font, at: 2, effectiveRange: nil) as? NSFont)
-        #expect(storage.attribute(.foregroundColor, at: 2, effectiveRange: nil) as? NSColor == .textColor)
+        #expect(storage.attribute(.foregroundColor, at: 2, effectiveRange: nil) as? NSColor == EditorStyle.ink)
         #expect(heading.fontDescriptor.symbolicTraits.contains(.bold))
         let marker = storage.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? NSColor
-        #expect(marker == .secondaryLabelColor)
+        #expect(marker == EditorStyle.muted)
         let strongOffset = (view.string as NSString).range(of: "重点").location
         #expect(storage.attribute(.foregroundColor, at: strongOffset, effectiveRange: nil) as? NSColor == EditorStyle.emphasis)
         let body = try #require(storage.attribute(.font, at: 5, effectiveRange: nil) as? NSFont)
@@ -190,6 +190,25 @@ struct SourceEditorTests {
         let moved = (view.string as NSString).range(of: "原本")
         #expect((view.textStorage!.attribute(.font, at: moved.location, effectiveRange: nil) as? NSFont)?
             .fontDescriptor.symbolicTraits.contains(.bold) == true)
+    }
+
+    @Test func backgroundStylingDoesNotApplyAnOldSnapshotAfterTyping() async throws {
+        let text = "# 标题\n\n" + String(repeating: "正文 **重点**\n\n", count: 2_000)
+        let (view, coordinator, document) = makeEditor(text: text)
+        coordinator.restyle(view)
+        view.insertText("x", replacementRange: NSRange(location: 0, length: 1))
+
+        let storage = try #require(view.textStorage)
+        let last = (view.string as NSString).range(of: "重点", options: .backwards).location
+        let until = ContinuousClock.now + .seconds(3)
+        while storage.attribute(.foregroundColor, at: last, effectiveRange: nil) as? NSColor != EditorStyle.emphasis,
+              ContinuousClock.now < until {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        #expect(storage.attribute(.foregroundColor, at: last, effectiveRange: nil) as? NSColor == EditorStyle.emphasis)
+        let font = storage.attribute(.font, at: 2, effectiveRange: nil) as? NSFont
+        #expect(font?.fontDescriptor.symbolicTraits.contains(.bold) == false)
+        #expect(document().hasPrefix("x 标题"))
     }
 
     @Test func keepsPageMarginsWhenTheEditorResizes() throws {

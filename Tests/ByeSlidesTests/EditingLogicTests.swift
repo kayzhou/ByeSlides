@@ -44,6 +44,25 @@ struct ListEditingTests {
         #expect(edit(before, ListEditing.newline) == after)
     }
 
+    @Test(arguments: [
+        ("1. 第一项|\n2. 第二项\n3. 第三项", "1. 第一项\n2. |\n3. 第二项\n4. 第三项"),
+        ("1) [x] 前🙂|后\n2) [x] 保留任务", "1) [x] 前🙂\n2) [ ] |后\n3) [x] 保留任务"),
+        ("1. 甲|\r\n2. 乙", "1. 甲\r\n2. |\r\n3. 乙"),
+        ("1. 甲|\n   1. 子项\n\n2. 乙\n   1. 另一子项\n3. 丙",
+         "1. 甲\n2. |\n   1. 子项\n\n3. 乙\n   1. 另一子项\n4. 丙"),
+        ("1. 外层\n   1. 甲|\n   2. 乙\n2. 另一外层",
+         "1. 外层\n   1. 甲\n   2. |\n   3. 乙\n2. 另一外层"),
+        ("8. 八|\n9. 九\n   - 子项\n10. 十",
+         "8. 八\n9. |\n10. 九\n    - 子项\n11. 十"),
+        ("1. 甲|\n2. 乙\n\n新段落\n\n3. 独立列表",
+         "1. 甲\n2. |\n3. 乙\n\n新段落\n\n3. 独立列表"),
+        ("1. 甲|\n3. 乙\n4. 丙", "1. 甲\n2. |\n3. 乙\n4. 丙"),
+        ("1. 甲|\n2) 乙", "1. 甲\n2. |\n2) 乙"),
+    ])
+    func middleInsertionRenumbersFollowingItems(before: String, after: String) {
+        #expect(edit(before, ListEditing.newline) == after)
+    }
+
     @Test(arguments: ["普通段落|", "|- 光标在标记前", "-不是列表|"])
     func returnOutsideListsKeepsItsUsualMeaning(text: String) {
         #expect(edit(text, ListEditing.newline) == nil)
@@ -145,8 +164,8 @@ struct WordCountTests {
     }
 
     @Test func statusBarShowsTheSelection() {
-        #expect(EditorStatusBar.summary(text: "一二三四", selection: NSRange(location: 0, length: 0)) == "4 字")
-        #expect(EditorStatusBar.summary(text: "一二三四", selection: NSRange(location: 1, length: 2)) == "已选 2 字，共 4 字")
+        #expect(EditorStatusBar.summary(total: 4, selected: nil) == "4 字")
+        #expect(EditorStatusBar.summary(total: 4, selected: 2) == "已选 2 字，共 4 字")
     }
 }
 
@@ -163,10 +182,11 @@ struct SourceLinesTests {
     @MainActor @Test func anchorConvertsBetweenModes() {
         let text = "一\n二\n三\n四"
         let anchor = ScrollAnchor()
-        #expect(!anchor.isSet)
+        #expect(!anchor.readerDidScroll)
         anchor.editorScrolled(toOffset: 4)
         #expect(anchor.line(in: text) == 2)
         anchor.readerScrolled(toLine: 3)
+        #expect(anchor.readerDidScroll)
         #expect(anchor.offset(in: text) == 6)
     }
 }

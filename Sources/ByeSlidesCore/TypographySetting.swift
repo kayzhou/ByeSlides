@@ -11,7 +11,9 @@ package struct TypographySetting: Sendable {
     /// Line height in the source editor, in tenths of the font size.
     package static let editorLineSpacing = TypographySetting(key: "editorSpacingTenths", defaultValue: 15, range: 10...24)
     /// Line height in reading mode, in tenths of the font size.
-    package static let readerLineSpacing = TypographySetting(key: "readerSpacingTenths", defaultValue: 17, range: 12...24)
+    package static let readerLineSpacing = TypographySetting(key: "readerSpacingTenths", defaultValue: 15, range: 12...24)
+    /// Horizontal inset of the document body, in points (CSS pixels in reading mode).
+    package static let pageMargin = TypographySetting(key: "pageMargin", defaultValue: 32, range: 16...96)
 
     package static let all: [TypographySetting] = [editorFontSize, editorLineSpacing, readerFontSize, readerLineSpacing]
 }

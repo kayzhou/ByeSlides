@@ -9,6 +9,7 @@ struct MarkdownPreview: NSViewRepresentable {
     let directory: URL?
     let style: ReadingStyle
     let allowsRemoteImages: Bool
+    let offersRemoteImages: Bool
     let anchor: ScrollAnchor
     let finder: ReadingFinder
     /// Called when the reader clicks “载入” in the remote image notice.

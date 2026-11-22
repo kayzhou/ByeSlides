@@ -12,25 +12,27 @@ struct EditorStyle: Equatable {
     var baseAttributes: [NSAttributedString.Key: Any] {
         let paragraph = NSMutableParagraphStyle()
         paragraph.lineHeightMultiple = CGFloat(lineSpacingTenths) / 10
-        return [.font: font, .paragraphStyle: paragraph, .foregroundColor: NSColor.textColor]
+        return [.font: font, .paragraphStyle: paragraph, .foregroundColor: Self.ink]
     }
 
     func attributes(for kind: MarkdownHighlighter.Kind) -> [NSAttributedString.Key: Any] {
         switch kind {
         case .heading: [.font: NSFont.monospacedSystemFont(ofSize: CGFloat(fontSize), weight: .semibold)]
         case .strong: [.foregroundColor: Self.emphasis]
-        case .url, .syntax: [.foregroundColor: NSColor.secondaryLabelColor]
+        case .url, .syntax: [.foregroundColor: Self.muted]
         }
     }
 
     static let emphasis = NSColor(hex: Palette.emphasis)
+    static let ink = NSColor(hex: Palette.ink)
+    static let muted = NSColor(hex: Palette.muted)
 
     /// Restyles whole lines of the text, or all of it. Styling only the lines around an edit keeps
     /// typing fast in long documents.
-    func apply(to storage: NSTextStorage, lines: NSRange? = nil) {
+    func apply(to storage: NSTextStorage, lines: NSRange? = nil, preparedRuns: [MarkdownHighlighter.Run]? = nil) {
         let text = storage.string as NSString
         let range = lines.map { text.lineRange(for: $0) } ?? NSRange(location: 0, length: text.length)
-        let runs = MarkdownHighlighter.runs(in: storage.string, limitedTo: lines == nil ? nil : range)
+        let runs = preparedRuns ?? MarkdownHighlighter.runs(in: storage.string, limitedTo: lines == nil ? nil : range)
         // Built once per pass; creating fonts and dictionaries per run dominates the cost otherwise.
         let base = baseAttributes
         let styles: [MarkdownHighlighter.Kind: [NSAttributedString.Key: Any]] = [

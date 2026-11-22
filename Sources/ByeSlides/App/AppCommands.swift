@@ -5,12 +5,18 @@ import SwiftUI
 // The keys are written out because the `@Entry` macro needs SwiftUI's macro plugin.
 
 struct DisplayModeKey: FocusedValueKey { typealias Value = Binding<DisplayMode> }
+struct DocumentZoomKey: FocusedValueKey { typealias Value = Binding<DocumentZoom> }
 struct PrintableDocumentKey: FocusedValueKey { typealias Value = PrintableDocument }
 
 extension FocusedValues {
     var displayMode: Binding<DisplayMode>? {
         get { self[DisplayModeKey.self] }
         set { self[DisplayModeKey.self] = newValue }
+    }
+
+    var documentZoom: Binding<DocumentZoom>? {
+        get { self[DocumentZoomKey.self] }
+        set { self[DocumentZoomKey.self] = newValue }
     }
 
     var printableDocument: PrintableDocument? {
@@ -22,6 +28,7 @@ extension FocusedValues {
 /// View > 编辑模式 ⌘1, 阅读模式 ⌘2.
 struct DisplayModeCommands: Commands {
     @FocusedBinding(\.displayMode) private var mode
+    @FocusedBinding(\.documentZoom) private var zoom
 
     var body: some Commands {
         CommandGroup(before: .toolbar) {
@@ -32,6 +39,16 @@ struct DisplayModeCommands: Commands {
                 .keyboardShortcut(candidate.shortcut)
                 .disabled(mode == nil)
             }
+            Divider()
+            Button("放大显示") { if let zoom { self.zoom = zoom.larger } }
+                .keyboardShortcut("=")
+                .disabled(zoom?.larger == zoom)
+            Button("缩小显示") { if let zoom { self.zoom = zoom.smaller } }
+                .keyboardShortcut("-")
+                .disabled(zoom?.smaller == zoom)
+            Button("恢复默认大小") { zoom = .standard }
+                .keyboardShortcut("0")
+                .disabled(zoom == nil || zoom == .standard)
             Divider()
         }
     }

@@ -4,6 +4,15 @@ import Foundation
 /// Hangul syllable counts as one, and each run of other letters or digits counts as one word.
 /// Whitespace, punctuation, Markdown symbols and link addresses are not counted.
 enum WordCount {
+    @concurrent
+    static func countInBackground(_ text: String, in range: NSRange? = nil) async -> Int? {
+        guard !Task.isCancelled else { return nil }
+        guard let range else { return count(text) }
+        let source = text as NSString
+        guard NSMaxRange(range) <= source.length else { return nil }
+        return count(source.substring(with: range))
+    }
+
     static func count(_ text: String) -> Int {
         let prose = urls.stringByReplacingMatches(in: text, range: NSRange(text.startIndex..., in: text), withTemplate: " ")
         var count = 0

@@ -3,7 +3,7 @@ import Foundation
 /// Finds the parts of Markdown source the editor styles. It is a light approximation of
 /// CommonMark, tuned to be fast enough to run on every keystroke.
 enum MarkdownHighlighter {
-    enum Kind: Hashable {
+    enum Kind: Hashable, Sendable {
         /// An ATX or setext heading line.
         case heading
         /// Text between `**` markers.
@@ -14,9 +14,15 @@ enum MarkdownHighlighter {
         case syntax
     }
 
-    struct Run: Equatable {
+    struct Run: Equatable, Sendable {
         let range: NSRange
         let kind: Kind
+    }
+
+    @concurrent
+    static func runsInBackground(in string: String) async -> [Run] {
+        guard !Task.isCancelled else { return [] }
+        return runs(in: string)
     }
 
     /// Runs in the whole text, or at least those in `range` when given. A range should cover whole
@@ -50,28 +56,39 @@ enum MarkdownHighlighter {
         var openFence: (character: unichar, length: Int, start: Int)?
         var previousParagraph: NSRange?
         var inTable = false
-        var lines: [NSRange] = []
-        text.enumerateSubstrings(in: NSRange(location: 0, length: text.length),
-                                 options: [.byLines, .substringNotRequired]) { _, line, _, _ in lines.append(line) }
         let string = text as String
-        // With a limit, lines before the block holding it are only checked for code fences,
-        // which can open far above. Setext headings and tables only look back within a block.
-        var firstStyledLine = 0
-        var lastStyledLine = lines.count - 1
+        var blockRange = NSRange(location: 0, length: text.length)
         if let limit {
-            let first = lines.firstIndex { NSMaxRange($0) >= limit.location } ?? lines.count
-            firstStyledLine = first
-            while firstStyledLine > 0, !isBlank(lines[firstStyledLine - 1], in: text) { firstStyledLine -= 1 }
-            lastStyledLine = lines.lastIndex { $0.location <= NSMaxRange(limit) } ?? -1
+            // Tables and setext headings need paragraph context. Only fence markers can
+            // affect highlighting across a blank line.
+            var start = limit.location
+            while start > 0 {
+                let previous = lineContent(at: start - 1, in: text)
+                guard !isBlank(previous, in: text) else { break }
+                start = previous.location
+            }
+            let end = NSMaxRange(text.lineRange(for: NSRange(location: NSMaxRange(limit), length: 0)))
+            blockRange = NSRange(location: start, length: end - start)
+            fence.enumerateMatches(in: string, options: .withoutAnchoringBounds, range: NSRange(location: 0, length: start)) { match, _, _ in
+                guard let marker = match?.range(at: 1) else { return }
+                let character = text.character(at: marker.location)
+                let line = lineContent(at: marker.location, in: text)
+                if let current = openFence {
+                    if marker.length >= current.length, character == current.character,
+                       closingFence.firstMatch(in: string, options: .anchored, range: line) != nil {
+                        code.append(NSRange(location: current.start, length: NSMaxRange(line) - current.start))
+                        openFence = nil
+                    }
+                } else {
+                    openFence = (character, marker.length, line.location)
+                }
+            }
         }
-        for (index, line) in lines.enumerated() {
-            if index > lastStyledLine { break }
+        var lines: [NSRange] = []
+        text.enumerateSubstrings(in: blockRange, options: [.byLines, .substringNotRequired]) { _, line, _, _ in lines.append(line) }
+        for line in lines {
             func match(_ pattern: NSRegularExpression) -> NSTextCheckingResult? {
                 pattern.firstMatch(in: string, options: .anchored, range: line)
-            }
-            if index < firstStyledLine {
-                trackFence(line, in: text, open: &openFence, code: &code)
-                continue
             }
             if let open = openFence {
                 if let close = match(closingFence), close.range(at: 1).length >= open.length,
@@ -130,33 +147,19 @@ enum MarkdownHighlighter {
         }
     }
 
+    private static func lineContent(at offset: Int, in text: NSString) -> NSRange {
+        var start = 0
+        var end = 0
+        text.getLineStart(&start, end: nil, contentsEnd: &end, for: NSRange(location: offset, length: 0))
+        return NSRange(location: start, length: end - start)
+    }
+
     private static func isBlank(_ line: NSRange, in text: NSString) -> Bool {
         for index in line.location..<NSMaxRange(line) {
             let character = text.character(at: index)
             if character != 0x20, character != 0x09 { return false }
         }
         return true
-    }
-
-    /// Fence bookkeeping for lines that are not styled. Checks characters before using a regex.
-    private static func trackFence(_ line: NSRange, in text: NSString,
-                                   open: inout (character: unichar, length: Int, start: Int)?, code: inout [NSRange]) {
-        var index = line.location
-        while index < NSMaxRange(line), index - line.location < 4, text.character(at: index) == 0x20 { index += 1 }
-        guard NSMaxRange(line) - index >= 3 else { return }
-        let character = text.character(at: index)
-        guard character == 0x60 || character == 0x7E,
-              text.character(at: index + 1) == character, text.character(at: index + 2) == character else { return }
-        let string = text as String
-        if let current = open {
-            if let close = closingFence.firstMatch(in: string, options: .anchored, range: line),
-               close.range(at: 1).length >= current.length, text.character(at: close.range(at: 1).location) == current.character {
-                code.append(NSRange(location: current.start, length: NSMaxRange(line) - current.start))
-                open = nil
-            }
-        } else if let opening = fence.firstMatch(in: string, options: .anchored, range: line) {
-            open = (text.character(at: opening.range(at: 1).location), opening.range(at: 1).length, line.location)
-        }
     }
 
     private static func markPipes(in line: NSRange, of text: NSString, into runs: inout [Run]) {
@@ -180,7 +183,14 @@ enum MarkdownHighlighter {
     private static func scanInline(_ text: NSString, in all: NSRange, into runs: inout [Run], code: inout [NSRange]) {
         let string = text as String
         func outsideCode(_ range: NSRange) -> Bool {
-            !code.contains { NSIntersectionRange($0, range).length > 0 }
+            var low = 0
+            var high = code.count
+            while low < high {
+                let middle = (low + high) / 2
+                if NSMaxRange(code[middle]) <= range.location { low = middle + 1 }
+                else { high = middle }
+            }
+            return low == code.count || code[low].location >= NSMaxRange(range)
         }
         func each(_ pattern: NSRegularExpression, _ body: (NSTextCheckingResult) -> Void) {
             for match in pattern.matches(in: string, range: all) where outsideCode(match.range) { body(match) }
@@ -190,11 +200,13 @@ enum MarkdownHighlighter {
                 runs.append(Run(range: match.range(at: group), kind: kind))
             }
         }
+        var spans: [NSRange] = []
         each(codeSpan) { match in
             add(match, [1], .syntax)
             runs.append(Run(range: NSRange(location: NSMaxRange(match.range(at: 2)), length: match.range(at: 1).length), kind: .syntax))
-            code.append(match.range)
+            spans.append(match.range)
         }
+        addExclusions(spans, to: &code)
         var addresses: [NSRange] = []
         each(autolink) { match in
             runs.append(Run(range: match.range, kind: .url))
@@ -207,7 +219,7 @@ enum MarkdownHighlighter {
                 addresses.append(match.range(at: 3))
             }
         }
-        code += addresses
+        addExclusions(addresses, to: &code)
         each(strong) { match in
             add(match, [2], .strong)
             add(match, [1], .syntax)
@@ -215,5 +227,18 @@ enum MarkdownHighlighter {
         }
         each(emphasis) { match in add(match, [1, 3, 4, 6], .syntax) }
         each(strikethrough) { match in add(match, [1, 3], .syntax) }
+    }
+
+    private static func addExclusions(_ added: [NSRange], to ranges: inout [NSRange]) {
+        guard !added.isEmpty else { return }
+        let sorted = (ranges + added).filter { $0.length > 0 }.sorted { $0.location < $1.location }
+        ranges.removeAll(keepingCapacity: true)
+        for range in sorted {
+            if let last = ranges.last, NSMaxRange(last) >= range.location {
+                ranges[ranges.count - 1] = NSUnionRange(last, range)
+            } else {
+                ranges.append(range)
+            }
+        }
     }
 }

@@ -8,6 +8,7 @@ package final class DocumentResourceHandler: NSObject, WKURLSchemeHandler {
     package nonisolated static let scheme = "document-resource"
     package nonisolated static let assetsHost = "assets"
     package nonisolated static let documentHost = "document"
+    package nonisolated static let documentPathPrefix = "/note/"
 
     /// Bundled files the page may request from the `assets` host, keyed by URL path.
     private static let assets: [String: (name: String, fileExtension: String, mimeType: String)] = [
@@ -16,6 +17,14 @@ package final class DocumentResourceHandler: NSObject, WKURLSchemeHandler {
 
     /// Folder of the open document, or nil for an unsaved one.
     package var folder: DocumentFolder?
+
+    /// The extra path component lets WebKit normalize links without turning a path
+    /// above the document folder into a different file inside that folder.
+    package nonisolated static func documentPath(for url: URL) -> String? {
+        guard url.scheme == scheme, url.host == documentHost,
+              url.path.hasPrefix(documentPathPrefix) else { return nil }
+        return String(url.path.dropFirst(documentPathPrefix.count))
+    }
 
     package func webView(_ webView: WKWebView, start task: WKURLSchemeTask) {
         guard let url = task.request.url,
@@ -42,7 +51,7 @@ package final class DocumentResourceHandler: NSObject, WKURLSchemeHandler {
     }
 
     private func image(for url: URL) -> (data: Data, response: URLResponse)? {
-        guard let file = folder?.file(atPath: url.path),
+        guard let path = Self.documentPath(for: url), let file = folder?.file(atPath: path),
               let type = UTType(filenameExtension: file.pathExtension), type.conforms(to: .image),
               let data = try? Data(contentsOf: file) else { return nil }
         let response = URLResponse(url: url, mimeType: type.preferredMIMEType,

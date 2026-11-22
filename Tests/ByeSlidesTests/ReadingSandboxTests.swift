@@ -51,9 +51,10 @@ struct LinkPolicyTests {
     }
 
     @Test(arguments: [
-        ("document-resource://document/paper.pdf", true), ("document-resource://document/PAPER.PDF", true), ("document-resource://document/img/a.png", true),
-        ("document-resource://document/app.zip", false), ("document-resource://document/sub.pdf", false),
-        ("document-resource://document/link.png", false), ("document-resource://assets/paper.pdf", false),
+        ("document-resource://document/note/paper.pdf", true), ("document-resource://document/note/PAPER.PDF", true),
+        ("document-resource://document/note/img/a.png", true), ("document-resource://document/note/app.zip", false),
+        ("document-resource://document/note/sub.pdf", false), ("document-resource://document/note/link.png", false),
+        ("document-resource://document/paper.pdf", false), ("document-resource://assets/note/paper.pdf", false),
     ])
     func localFiles(link: String, opens: Bool) throws {
         let fixture = try Fixture()

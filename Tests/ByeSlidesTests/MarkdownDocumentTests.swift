@@ -36,4 +36,24 @@ struct MarkdownDocumentTests {
         #expect(document.text.isEmpty)
         #expect(try MarkdownDocument(text: "a").data() == Data("a".utf8))
     }
+
+    @Test func opensOneNotePerLocalDateAndPreservesItsContents() throws {
+        let folder = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString, directoryHint: .isDirectory)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let date = try Date("2026-11-11T16:30:00Z", strategy: .iso8601)
+        let timeZone = try #require(TimeZone(identifier: "Asia/Shanghai"))
+
+        let note = try ByeSlidesAppDelegate.prepareDailyNote(in: folder, date: date, timeZone: timeZone)
+        #expect(note.lastPathComponent == "2026-11-12.md")
+        #expect(try Data(contentsOf: note).isEmpty)
+
+        let saved = Data("今天的随笔。".utf8)
+        try saved.write(to: note)
+        #expect(try ByeSlidesAppDelegate.prepareDailyNote(in: folder, date: date, timeZone: timeZone) == note)
+        #expect(try Data(contentsOf: note) == saved)
+
+        let tomorrow = try ByeSlidesAppDelegate.prepareDailyNote(in: folder, date: date + 86_400, timeZone: timeZone)
+        #expect(tomorrow.lastPathComponent == "2026-11-13.md")
+        #expect(try Data(contentsOf: tomorrow).isEmpty)
+    }
 }

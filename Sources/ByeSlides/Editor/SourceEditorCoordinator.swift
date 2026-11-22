@@ -10,14 +10,16 @@ extension SourceEditor {
         /// Set while the text is replaced from outside, so the change isn't echoed back into SwiftUI state.
         private var isReplacingText = false
         private var scrollObserver: NSObjectProtocol?
-        private var pendingRestyle: DispatchWorkItem?
+        private weak var undoView: NSTextView?
+        private var textBeforeUndo: String?
+        private var pendingRestyle: Task<Void, Never>?
         /// Text changed since the last style pass: where it starts, and how far its end is from the
         /// end of the text. Both stay valid as later edits are made around them.
         private var dirty: (start: Int, distanceFromEnd: Int)?
         private var dirtyNeedsFullPass = false
 
-        /// Above this many UTF-16 units, a full style pass waits for a pause in typing.
-        static let immediateStylingLimit = 200_000
+        /// Longer documents get their base typography immediately and syntax runs off the main thread.
+        static let immediateStylingLimit = 16_000
         /// Edits larger than this, such as a big paste, restyle the whole text.
         static let localStylingLimit = 20_000
 
@@ -37,11 +39,22 @@ extension SourceEditor {
 
         /// Restyles the whole text.
         func restyle(_ view: NSTextView) {
-            pendingRestyle?.cancel()
             guard let style, let storage = view.textStorage, !view.hasMarkedText() else { return }
+            if storage.length > Self.immediateStylingLimit {
+                style.apply(to: storage, preparedRuns: [])
+                view.typingAttributes = style.baseAttributes
+                scheduleFullRestyle(view, after: .zero)
+            } else {
+                finishRestyle(in: view)
+            }
+        }
+
+        private func finishRestyle(in view: NSTextView, runs: [MarkdownHighlighter.Run]? = nil) {
+            guard let style, let storage = view.textStorage, !view.hasMarkedText() else { return }
+            cancelPendingRestyle()
             dirty = nil
             dirtyNeedsFullPass = false
-            style.apply(to: storage)
+            style.apply(to: storage, preparedRuns: runs)
             view.typingAttributes = style.baseAttributes
         }
 
@@ -64,14 +77,22 @@ extension SourceEditor {
             view.typingAttributes = style.baseAttributes
         }
 
-        private func scheduleFullRestyle(_ view: NSTextView) {
-            guard (view.textStorage?.length ?? 0) > Self.immediateStylingLimit else { return restyle(view) }
+        private func scheduleFullRestyle(_ view: NSTextView, after delay: Duration = .milliseconds(150)) {
+            guard (view.textStorage?.length ?? 0) > Self.immediateStylingLimit else { return finishRestyle(in: view) }
+            dirtyNeedsFullPass = true
             pendingRestyle?.cancel()
-            let work = DispatchWorkItem { [weak self, weak view] in
-                if let view { self?.restyle(view) }
+            pendingRestyle = Task { [weak self, weak view] in
+                if delay > .zero { try? await Task.sleep(for: delay) }
+                guard !Task.isCancelled, let text = view?.string else { return }
+                let runs = await MarkdownHighlighter.runsInBackground(in: text)
+                guard !Task.isCancelled, let view, view.string == text else { return }
+                self?.finishRestyle(in: view, runs: runs)
             }
-            pendingRestyle = work
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: work)
+        }
+
+        func cancelPendingRestyle() {
+            pendingRestyle?.cancel()
+            pendingRestyle = nil
         }
 
         private static func containsFence(_ text: String) -> Bool {
@@ -94,6 +115,10 @@ extension SourceEditor {
 
         func textDidChange(_ notification: Notification) {
             guard let view = committedTextView(notification) else { return }
+            commitEdit(in: view)
+        }
+
+        private func commitEdit(in view: NSTextView) {
             if owner.text != view.string { owner.text = view.string }
             restyleEdits(view)
             syncSelection(view)
@@ -113,8 +138,44 @@ extension SourceEditor {
         private func syncSelection(_ view: NSTextView) {
             let range = view.selectedRange()
             guard range.location != NSNotFound else { return }
-            if owner.cursorOffset != range.location { owner.cursorOffset = range.location }
-            if owner.selection != range { owner.selection = range }
+            // The status bar only uses selected text. AppKit keeps the insertion
+            // point, avoiding a SwiftUI update for every move of the caret.
+            let selection = range.length > 0 ? range : NSRange(location: 0, length: 0)
+            if owner.selection != selection { owner.selection = selection }
+        }
+
+        // AppKit can restore the text storage without calling textDidChange.
+        func observeUndo(in view: NSTextView) {
+            undoView = view
+            let center = NotificationCenter.default
+            for name in [Notification.Name.NSUndoManagerWillUndoChange, .NSUndoManagerWillRedoChange] {
+                center.addObserver(self, selector: #selector(willReplayEdit(_:)), name: name, object: nil)
+            }
+            for name in [Notification.Name.NSUndoManagerDidUndoChange, .NSUndoManagerDidRedoChange] {
+                center.addObserver(self, selector: #selector(didReplayEdit(_:)), name: name, object: nil)
+            }
+        }
+
+        func stopObservingUndo() {
+            NotificationCenter.default.removeObserver(self)
+            undoView = nil
+            textBeforeUndo = nil
+        }
+
+        @objc private func willReplayEdit(_ notification: Notification) {
+            guard let view = undoView, let manager = notification.object as? UndoManager, view.undoManager === manager else { return }
+            textBeforeUndo = view.string
+        }
+
+        @objc private func didReplayEdit(_ notification: Notification) {
+            guard let view = undoView, let manager = notification.object as? UndoManager, view.undoManager === manager else { return }
+            defer { textBeforeUndo = nil }
+            guard !isReplacingText, !view.hasMarkedText(), let textBeforeUndo,
+                  textBeforeUndo != view.string, owner.text != view.string else { return }
+            // SwiftUI's document binding must not create a new undo entry during synchronization.
+            manager.disableUndoRegistration()
+            defer { manager.enableUndoRegistration() }
+            commitEdit(in: view)
         }
 
         // MARK: Scroll position
@@ -125,7 +186,7 @@ extension SourceEditor {
                 forName: NSView.boundsDidChangeNotification, object: scroll.contentView, queue: .main
             ) { [weak self, weak scroll] _ in
                 MainActor.assumeIsolated {
-                    guard let self, let view = scroll?.documentView as? NSTextView else { return }
+                    guard let self, self.owner.isActive, let view = scroll?.documentView as? NSTextView else { return }
                     self.owner.anchor.editorScrolled(toOffset: Self.topCharacter(in: view))
                 }
             }
@@ -143,20 +204,22 @@ extension SourceEditor {
                                                                y: visible.minY + 1))
         }
 
-        /// Puts the cursor back, and shows the passage the reading view was showing, if any.
-        func restorePosition(in view: NSTextView) {
-            let length = view.string.utf16.count
-            let cursor = NSRange(location: min(owner.cursorOffset, length), length: 0)
-            view.setSelectedRange(cursor)
-            guard owner.anchor.isSet else { return view.scrollRangeToVisible(cursor) }
-            let top = owner.anchor.offset(in: view.string)
-            Self.scroll(view, toShowOffsetAtTop: top)
-            // Typing should happen where the reader was looking, not off screen.
-            let visible = view.visibleRect
-            let bottom = view.characterIndexForInsertion(at: NSPoint(x: visible.maxX - 1, y: visible.maxY - 1))
-            if cursor.location < Self.topCharacter(in: view) || cursor.location > bottom {
-                view.setSelectedRange(NSRange(location: top, length: 0))
+        /// Returns focus to the text view. Its native selection stays intact unless the
+        /// reader moved to another passage and the old insertion point is now off screen.
+        func activate(_ view: NSTextView) {
+            guard owner.isActive, let window = view.window else { return }
+            if owner.anchor.readerDidScroll {
+                let top = owner.anchor.offset(in: view.string)
+                Self.scroll(view, toShowOffsetAtTop: top)
+                let visible = view.visibleRect
+                let bottom = view.characterIndexForInsertion(at: NSPoint(x: visible.maxX - 1, y: visible.maxY - 1))
+                let selection = view.selectedRange()
+                if selection.location < Self.topCharacter(in: view) || NSMaxRange(selection) > bottom {
+                    view.setSelectedRange(NSRange(location: top, length: 0))
+                }
+                owner.anchor.editorScrolled(toOffset: Self.topCharacter(in: view))
             }
+            window.makeFirstResponder(view)
         }
 
         static func scroll(_ view: NSTextView, toShowOffsetAtTop offset: Int) {

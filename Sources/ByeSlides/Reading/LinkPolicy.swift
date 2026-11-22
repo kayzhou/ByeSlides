@@ -17,8 +17,8 @@ enum LinkPolicy {
         case "mailto":
             return url
         case DocumentResourceHandler.scheme:
-            guard url.host == DocumentResourceHandler.documentHost,
-                  let file = folder?.file(atPath: url.path),
+            guard let path = DocumentResourceHandler.documentPath(for: url),
+                  let file = folder?.file(atPath: path),
                   let type = UTType(filenameExtension: file.pathExtension), opensLocalFile(of: type),
                   (try? file.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true else { return nil }
             return file

@@ -19,7 +19,7 @@ struct PreviewPageTests {
 
     @Test func appliesTheReadingStyle() {
         let style = ReadingStyle(fontSize: 20, lineSpacingTenths: 15)
-        #expect(style.cssDeclarations == "--reading-size: 20px; --line-height: 1.5")
+        #expect(style.cssDeclarations.hasPrefix("--reading-size: 20px; --line-height: 1.5;"))
         #expect(PreviewPage.html(markdown: "", style: style).contains(":root { --reading-size: 20px; --line-height: 1.5;"))
         #expect(style.updateScript.contains("setProperty('--line-height', '1.5')"))
     }

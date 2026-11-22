@@ -122,7 +122,7 @@ function holdRemoteImages(root, options) {
     const notice = document.createElement("p");
     notice.className = "remote-notice";
     notice.append(`为保护隐私，未载入 ${remote.length} 张远程图片。`);
-    if (window.webkit?.messageHandlers?.reading) {
+    if (options.offerRemoteImages && window.webkit?.messageHandlers?.reading) {
         const button = document.createElement("button");
         button.type = "button";
         button.textContent = "载入";
@@ -131,7 +131,27 @@ function holdRemoteImages(root, options) {
     root.prepend(notice);
 }
 
-const postProcessors = [restrictInputs, addHeadingIds, wrapTables, holdRemoteImages];
+// A single leading slash denotes the document folder. Resolve it under the same
+// base path as other local references so the app can still check folder boundaries.
+function keepLocalPathsInDocument(root) {
+    for (const element of root.querySelectorAll("a[href], img[src]")) {
+        const attribute = element.tagName === "A" ? "href" : "src";
+        const reference = element.getAttribute(attribute).trim();
+        if (/^(?:#|\/\/|[a-z][a-z0-9+.-]*:)/i.test(reference)) continue;
+        let depth = 0;
+        for (const segment of reference.split(/[?#]/, 1)[0].split("/")) {
+            const component = segment.replace(/%2e/ig, ".");
+            if (!component || component === ".") continue;
+            depth += component === ".." ? -1 : 1;
+            if (depth >= 0) continue;
+            element.removeAttribute(attribute);
+            break;
+        }
+        if (depth >= 0 && reference.startsWith("/")) element.setAttribute(attribute, "." + reference);
+    }
+}
+
+const postProcessors = [restrictInputs, addHeadingIds, wrapTables, holdRemoteImages, keepLocalPathsInDocument];
 
 let sourceBlocks = [];
 
@@ -173,12 +193,36 @@ function scrollToSourceLine(line) {
     window.scrollTo(0, window.scrollY + box.top + progress * box.height);
 }
 
+// Keep the same point within the visible Markdown block when a font size reflows the page.
+function withReadingPosition(update) {
+    if (window.scrollY === 0) return update();
+    let anchor;
+    for (const {element} of sourceBlocks) {
+        const box = element.getBoundingClientRect();
+        if (box.top > 0) break;
+        anchor = {element, top: box.top, height: box.height};
+    }
+    update();
+    if (anchor) {
+        const box = anchor.element.getBoundingClientRect();
+        const scale = anchor.height > 0 ? box.height / anchor.height : 1;
+        window.scrollBy(0, box.top - anchor.top * scale);
+    }
+}
+
 // Fonts and images change the layout after the first paint, so the position is applied again
 // once they arrive, unless the reader has started scrolling by then.
 let readerHasScrolled = false;
+let restoredScrollY = 0;
 function restoreSourceLine(line) {
+    readerHasScrolled = false;
+    restoredScrollY = window.scrollY;
     if (line <= 0) return;
-    const apply = () => { if (!readerHasScrolled) scrollToSourceLine(line); };
+    const apply = () => {
+        if (readerHasScrolled) return;
+        scrollToSourceLine(line);
+        restoredScrollY = window.scrollY;
+    };
     apply();
     document.fonts.ready.then(apply);
     window.addEventListener("load", apply, {once: true});
@@ -190,12 +234,19 @@ for (const type of ["wheel", "keydown", "mousedown", "touchstart"]) {
 // Reported at most every 50 ms. A timer rather than requestAnimationFrame, which never fires
 // in a web view that isn't on screen.
 let reportedLine = -1;
+let reportedRestoration = false;
 let reportTimer = null;
 window.addEventListener("scroll", () => {
     reportTimer ??= setTimeout(() => {
         reportTimer = null;
         const line = topSourceLine();
-        if (line !== reportedLine) postToApp({type: "scroll", line: reportedLine = line});
+        const restored = !readerHasScrolled && Math.abs(window.scrollY - restoredScrollY) < 1;
+        if (!restored) readerHasScrolled = true;
+        if (line !== reportedLine || restored !== reportedRestoration) {
+            reportedLine = line;
+            reportedRestoration = restored;
+            postToApp({type: "scroll", line, restored});
+        }
     }, 50);
 }, {passive: true});
 

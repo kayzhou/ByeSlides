@@ -46,7 +46,10 @@ final class ScrollAnchor {
     /// Nil until either mode has scrolled, so the editor first opens at the restored cursor.
     private var position: Position?
 
-    var isSet: Bool { position != nil }
+    var readerDidScroll: Bool {
+        if case .line = position { return true }
+        return false
+    }
 
     func editorScrolled(toOffset offset: Int) { position = .offset(offset) }
     func readerScrolled(toLine line: Int) { position = .line(line) }

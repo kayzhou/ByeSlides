@@ -10,6 +10,10 @@ extension UTType {
 struct MarkdownDocument: FileDocument {
     static let readableContentTypes: [UTType] = [.markdownDocument, .plainText]
 
+    static func dateName(for date: Date = .now, timeZone: TimeZone = .current) -> String {
+        Date.ISO8601FormatStyle(timeZone: timeZone).year().month().day().dateSeparator(.dash).format(date)
+    }
+
     var text: String
     private var encoding: TextEncoding
 

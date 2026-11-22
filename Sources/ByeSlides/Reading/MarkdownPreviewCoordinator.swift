@@ -6,31 +6,34 @@ extension MarkdownPreview {
     final class Coordinator: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
         var owner: MarkdownPreview
         let resources = DocumentResourceHandler()
-        private var rendered: (markdown: String, directory: URL?, allowsRemoteImages: Bool)?
+        private var rendered: (markdown: String, directory: URL?, allowsRemoteImages: Bool, offersRemoteImages: Bool)?
         private var style: ReadingStyle?
 
         init(_ owner: MarkdownPreview) { self.owner = owner }
 
         /// Reloads the page when its content changes; otherwise only restyles it.
         func update(_ view: WKWebView) {
-            let styleChanged = style != owner.style
+            let previousStyle = style
             style = owner.style
             if let rendered, rendered.markdown == owner.markdown, rendered.directory == owner.directory,
-               rendered.allowsRemoteImages == owner.allowsRemoteImages {
-                if styleChanged { applyStyle(to: view) }
+               rendered.allowsRemoteImages == owner.allowsRemoteImages,
+               rendered.offersRemoteImages == owner.offersRemoteImages {
+                if previousStyle != owner.style { applyStyle(to: view, keepingPosition: true) }
                 return
             }
-            rendered = (owner.markdown, owner.directory, owner.allowsRemoteImages)
+            rendered = (owner.markdown, owner.directory, owner.allowsRemoteImages, owner.offersRemoteImages)
             resources.folder = owner.directory.map(DocumentFolder.init)
             let options = PreviewOptions(allowsRemoteImages: owner.allowsRemoteImages,
+                                         offersRemoteImages: owner.offersRemoteImages,
                                          sourceLine: owner.anchor.line(in: owner.markdown))
             view.loadHTMLString(PreviewPage.html(markdown: owner.markdown, style: owner.style, options: options),
                                 baseURL: PreviewPage.baseURL)
         }
 
-        private func applyStyle(to view: WKWebView) {
+        private func applyStyle(to view: WKWebView, keepingPosition: Bool = false) {
             guard let style else { return }
-            view.evaluateJavaScript(style.updateScript)
+            let script = style.updateScript
+            view.evaluateJavaScript(keepingPosition ? "withReadingPosition(() => { \(script) });" : script)
         }
 
         // The style may have changed while the page was loading.
@@ -54,9 +57,11 @@ extension MarkdownPreview {
             guard let body = message.body as? [String: Any] else { return }
             switch body["type"] as? String {
             case "scroll":
-                if let line = body["line"] as? Int { owner.anchor.readerScrolled(toLine: line) }
+                if body["restored"] as? Bool == false, let line = body["line"] as? Int {
+                    owner.anchor.readerScrolled(toLine: line)
+                }
             case "loadRemoteImages":
-                owner.loadRemoteImages()
+                if owner.offersRemoteImages { owner.loadRemoteImages() }
             default:
                 break
             }
