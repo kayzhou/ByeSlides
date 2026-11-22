@@ -4,6 +4,8 @@ cd "$(dirname "$0")/.."
 swift build -c release
 bin=$(swift build -c release --show-bin-path)
 app=dist/ByeSlides.app
+# Start from an empty bundle so files removed from the project do not linger.
+rm -rf "$app"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
 cp "$bin/ByeSlides" "$app/Contents/MacOS/ByeSlides"
 cp Packaging/Info.plist "$app/Contents/"

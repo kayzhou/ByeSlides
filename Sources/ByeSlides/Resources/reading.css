@@ -1,0 +1,30 @@
+/* Reading-mode stylesheet. `--reading-size` and `--line-height` are set by the app (ReadingStyle.swift). */
+
+@font-face { font-family: "LXGW WenKai"; src: url("document-resource://assets/LXGWWenKai-Regular.ttf") format("truetype"); font-weight: 400; font-display: swap }
+
+:root { color-scheme: light dark; --quote-border: #96969b; --table-border: #b5b5ba }
+@media (prefers-color-scheme: dark) {
+    :root { --quote-border: #aaaab2; --table-border: #777780 }
+}
+
+body { font: 400 var(--reading-size)/var(--line-height) "LXGW WenKai", "霞鹜文楷", system-ui; max-width: 39em; margin: auto; padding: 4vh 5vw; overflow-wrap: anywhere }
+p { margin-block: 0 .8em }
+h1, h2 { line-height: 1.3; text-wrap: balance }
+h1 { font-size: clamp(1.5556em, calc(1.25em + 1vw), 1.7778em) }
+h2 { font-size: 1.3333em }
+h3 { font-size: 1.1667em }
+hr { border: 0; border-top: 1px solid #8886; margin: 1.6em 0 }
+img { max-width: 100%; height: auto }
+
+blockquote { margin-inline: 0; padding-inline-start: 1em; border-inline-start: .22em solid var(--quote-border) }
+ul, ol { padding-inline-start: 1.65em }
+li.task-item { list-style: none }
+
+code, kbd, samp { font-family: ui-monospace, monospace; font-size: .91em }
+:not(pre) > code, kbd { background: #8882; border-radius: .25em; padding: .08em .25em }
+pre { overflow-x: auto; padding: 1em; background: #8882 }
+
+.table-scroll { max-width: 100%; overflow-x: auto; margin-block: .8em }
+table { border-collapse: collapse; width: max-content; max-width: 100% }
+th, td { border: 1px solid var(--table-border); padding: .35em .65em; min-width: 4em; max-width: 24em; vertical-align: top }
+th { background: #8882 }
