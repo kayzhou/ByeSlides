@@ -1,0 +1,17 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    # macOS 27 with Xcode 27, which provides Swift 6.4.
+    runs-on: xcode-27
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - run: swift --version
+      - run: swift test
+      - run: ./Scripts/build-app.sh

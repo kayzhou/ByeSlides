@@ -1,6 +1,7 @@
 import Foundation
 import Testing
 @testable import ByeSlides
+@testable import ByeSlidesCore
 
 struct MarkdownDocumentTests {
     @Test(arguments: [

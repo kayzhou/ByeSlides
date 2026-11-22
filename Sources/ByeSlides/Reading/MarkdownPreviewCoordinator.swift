@@ -1,25 +1,31 @@
 import AppKit
+import ByeSlidesCore
 import WebKit
 
 extension MarkdownPreview {
-    final class Coordinator: NSObject, WKNavigationDelegate {
+    final class Coordinator: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
+        var owner: MarkdownPreview
         let resources = DocumentResourceHandler()
-        private var renderedMarkdown: String?
-        private var directory: URL?
+        private var rendered: (markdown: String, directory: URL?, allowsRemoteImages: Bool)?
         private var style: ReadingStyle?
 
-        /// Reloads the page when the text or folder changes; otherwise only restyles it.
-        func update(_ view: WKWebView, markdown: String, directory: URL?, style: ReadingStyle) {
-            let styleChanged = self.style != style
-            self.style = style
-            guard markdown != renderedMarkdown || directory != self.directory else {
+        init(_ owner: MarkdownPreview) { self.owner = owner }
+
+        /// Reloads the page when its content changes; otherwise only restyles it.
+        func update(_ view: WKWebView) {
+            let styleChanged = style != owner.style
+            style = owner.style
+            if let rendered, rendered.markdown == owner.markdown, rendered.directory == owner.directory,
+               rendered.allowsRemoteImages == owner.allowsRemoteImages {
                 if styleChanged { applyStyle(to: view) }
                 return
             }
-            renderedMarkdown = markdown
-            self.directory = directory
-            resources.folder = directory.map(DocumentFolder.init)
-            view.loadHTMLString(PreviewPage.html(markdown: markdown, style: style), baseURL: PreviewPage.baseURL)
+            rendered = (owner.markdown, owner.directory, owner.allowsRemoteImages)
+            resources.folder = owner.directory.map(DocumentFolder.init)
+            let options = PreviewOptions(allowsRemoteImages: owner.allowsRemoteImages,
+                                         sourceLine: owner.anchor.line(in: owner.markdown))
+            view.loadHTMLString(PreviewPage.html(markdown: owner.markdown, style: owner.style, options: options),
+                                baseURL: PreviewPage.baseURL)
         }
 
         private func applyStyle(to view: WKWebView) {
@@ -41,6 +47,18 @@ extension MarkdownPreview {
             decisionHandler(.cancel)
             if let url = action.request.url, let target = LinkPolicy.destination(for: url, in: resources.folder) {
                 NSWorkspace.shared.open(target)
+            }
+        }
+
+        func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
+            guard let body = message.body as? [String: Any] else { return }
+            switch body["type"] as? String {
+            case "scroll":
+                if let line = body["line"] as? Int { owner.anchor.readerScrolled(toLine: line) }
+            case "loadRemoteImages":
+                owner.loadRemoteImages()
+            default:
+                break
             }
         }
     }

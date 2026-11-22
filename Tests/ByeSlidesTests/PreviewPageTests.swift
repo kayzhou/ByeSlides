@@ -1,6 +1,7 @@
 import Foundation
 import Testing
 @testable import ByeSlides
+@testable import ByeSlidesCore
 
 struct PreviewPageTests {
     @Test func bundledScriptsAndStylesheetAreFound() {
@@ -19,8 +20,15 @@ struct PreviewPageTests {
     @Test func appliesTheReadingStyle() {
         let style = ReadingStyle(fontSize: 20, lineSpacingTenths: 15)
         #expect(style.cssDeclarations == "--reading-size: 20px; --line-height: 1.5")
-        #expect(PreviewPage.html(markdown: "", style: style).contains(":root { --reading-size: 20px; --line-height: 1.5 }"))
+        #expect(PreviewPage.html(markdown: "", style: style).contains(":root { --reading-size: 20px; --line-height: 1.5;"))
         #expect(style.updateScript.contains("setProperty('--line-height', '1.5')"))
+    }
+
+    @Test func remoteImagesNeedPermission() {
+        let style = ReadingStyle.standard
+        #expect(PreviewPage.html(markdown: "", style: style).contains("img-src document-resource: data:;"))
+        #expect(PreviewPage.html(markdown: "", style: style, options: PreviewOptions(allowsRemoteImages: true))
+            .contains("img-src document-resource: data: https: http:;"))
     }
 
     @Test func storedModeValuesStayReadable() {

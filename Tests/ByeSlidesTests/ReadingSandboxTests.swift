@@ -1,6 +1,7 @@
 import Foundation
 import Testing
 @testable import ByeSlides
+@testable import ByeSlidesCore
 
 /// Builds a document folder in a temporary directory, with a sibling folder outside it.
 private struct Fixture {

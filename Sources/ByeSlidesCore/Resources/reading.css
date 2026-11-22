@@ -1,0 +1,62 @@
+/* Reading-mode stylesheet. PreviewPage.swift sets --reading-size, --line-height and the --emphasis-* colours. */
+
+@font-face { font-family: "LXGW WenKai"; src: url("document-resource://assets/LXGWWenKai-Regular.ttf") format("truetype"); font-weight: 400; font-display: swap }
+
+:root { color-scheme: light dark; --emphasis: var(--emphasis-light); --muted: #6e6e73; --quote-border: #96969b; --table-border: #b5b5ba }
+@media (prefers-color-scheme: dark) {
+    :root { --emphasis: var(--emphasis-dark); --muted: #98989d; --quote-border: #aaaab2; --table-border: #777780 }
+}
+
+body {
+    font: 400 var(--reading-size)/var(--line-height) "LXGW WenKai", "霞鹜文楷", "Kaiti SC", system-ui;
+    max-width: 39em; margin: auto; padding: 4vh 5vw; overflow-wrap: anywhere;
+    /* The font has a single weight; never smear it into a fake bold. */
+    font-synthesis-weight: none;
+    /* Chinese typesetting: a thin gap between Han and Latin text, and end-of-line punctuation may hang. */
+    text-autospace: normal; hanging-punctuation: allow-end;
+}
+p { margin-block: 0 .8em; text-align: justify; text-wrap: pretty }
+hr { border: 0; border-top: 1px solid #8886; margin: 1.6em 0 }
+img { max-width: 100%; height: auto }
+
+/* Headings and bold text stand out through size and colour, not weight. */
+h1, h2, h3, h4, h5, h6, th, b, strong { font-weight: 400 }
+b, strong { color: var(--emphasis) }
+h1, h2 { line-height: 1.3; text-wrap: balance }
+h1 { font-size: clamp(1.5556em, calc(1.25em + 1vw), 1.7778em) }
+h2 { font-size: 1.3333em }
+h3 { font-size: 1.1667em }
+/* These are body-sized, so colour is what sets them apart. */
+h4, h5, h6 { font-size: 1em; color: var(--emphasis) }
+
+a { color: -apple-system-blue; text-decoration-color: color-mix(in srgb, currentColor 40%, transparent); text-underline-offset: .18em }
+
+blockquote { margin-inline: 0; padding-inline-start: 1em; border-inline-start: .22em solid var(--quote-border); color: var(--muted) }
+ul, ol { padding-inline-start: 1.65em }
+li.task-item { list-style: none }
+li.task-item > input { margin-inline: -1.4em .4em }
+
+code, kbd, samp { font-family: ui-monospace, monospace; font-size: .91em }
+:not(pre) > code, kbd { background: #8882; border-radius: .25em; padding: .08em .25em }
+pre { overflow-x: auto; padding: 1em; background: #8882; border-radius: .4em; line-height: 1.5 }
+
+.table-scroll { max-width: 100%; overflow-x: auto; margin-block: .8em }
+table { border-collapse: collapse; width: max-content; max-width: 100% }
+th, td { border: 1px solid var(--table-border); padding: .35em .65em; min-width: 4em; max-width: 24em; vertical-align: top }
+th { background: #8882 }
+
+/* Remote images wait until the reader asks for them (reading.js). */
+.remote-notice { display: flex; gap: .6em; align-items: baseline; margin-block: 0 1.4em; font-size: .8em; color: var(--muted) }
+.remote-notice button { font: inherit; color: -apple-system-blue; background: none; border: 0; padding: 0; cursor: pointer }
+.blocked-image { display: inline-block; padding: .1em .5em; border: 1px dashed var(--table-border); border-radius: .3em; font-size: .9em; color: var(--muted) }
+
+@media print {
+    :root { color-scheme: light; --emphasis: var(--emphasis-light); --muted: #6e6e73; --quote-border: #96969b; --table-border: #b5b5ba }
+    body { max-width: none; padding: 0; font-size: 12pt }
+    a { color: inherit }
+    pre { white-space: pre-wrap; overflow: visible }
+    .table-scroll { overflow: visible }
+    h1, h2, h3, h4, h5, h6 { break-after: avoid }
+    pre, blockquote, tr, img { break-inside: avoid }
+    .remote-notice { display: none }
+}

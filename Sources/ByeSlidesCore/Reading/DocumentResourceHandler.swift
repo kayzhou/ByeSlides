@@ -4,19 +4,20 @@ import WebKit
 /// Serves `document-resource://` requests for the reading page.
 /// Host `assets` serves bundled files such as the reading font; host `document` serves images
 /// from the document's folder.
-final class DocumentResourceHandler: NSObject, WKURLSchemeHandler {
-    nonisolated static let scheme = "document-resource"
-    nonisolated static let assetsHost = "assets"
-    nonisolated static let documentHost = "document"
+package final class DocumentResourceHandler: NSObject, WKURLSchemeHandler {
+    package nonisolated static let scheme = "document-resource"
+    package nonisolated static let assetsHost = "assets"
+    package nonisolated static let documentHost = "document"
 
     /// Bundled files the page may request from the `assets` host, keyed by URL path.
     private static let assets: [String: (name: String, fileExtension: String, mimeType: String)] = [
         "/LXGWWenKai-Regular.ttf": ("LXGWWenKai-Regular", "ttf", "font/ttf"),
     ]
 
-    var folder: DocumentFolder?
+    /// Folder of the open document, or nil for an unsaved one.
+    package var folder: DocumentFolder?
 
-    func webView(_ webView: WKWebView, start task: WKURLSchemeTask) {
+    package func webView(_ webView: WKWebView, start task: WKURLSchemeTask) {
         guard let url = task.request.url,
               let payload = url.host == Self.assetsHost ? asset(for: url) : image(for: url) else {
             task.didFailWithError(URLError(.fileDoesNotExist))
@@ -27,7 +28,7 @@ final class DocumentResourceHandler: NSObject, WKURLSchemeHandler {
         task.didFinish()
     }
 
-    func webView(_ webView: WKWebView, stop task: WKURLSchemeTask) {}
+    package func webView(_ webView: WKWebView, stop task: WKURLSchemeTask) {}
 
     private func asset(for url: URL) -> (data: Data, response: URLResponse)? {
         guard let asset = Self.assets[url.path],
